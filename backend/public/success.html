@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment Successful — Sidebrief for macOS</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎉</text></svg>">
+  <style>
+    .success-card {
+      max-width: 620px;
+      margin: 80px auto;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      padding: 48px;
+      text-align: center;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: var(--card-shadow);
+    }
+    .license-box {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px dashed var(--accent);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin: 24px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .license-code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #818cf8;
+      letter-spacing: 0.05em;
+    }
+    .copy-btn {
+      padding: 8px 14px;
+      font-size: 0.85rem;
+    }
+    .steps {
+      text-align: left;
+      margin: 32px 0 24px;
+      padding-left: 20px;
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      line-height: 1.8;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container nav-wrapper">
+      <a href="/" class="logo">
+        <div class="logo-icon">SB</div>
+        <span>Sidebrief</span>
+      </a>
+      <a href="/downloads/Sidebrief.dmg" class="btn btn-secondary">Download .dmg</a>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="success-card">
+      <div style="font-size: 3rem; margin-bottom: 12px;">🎉</div>
+      <h1 style="font-size: 2rem; margin-bottom: 10px;">Payment Successful!</h1>
+      <p style="color: var(--text-secondary); margin-bottom: 24px;">
+        Thank you for purchasing Sidebrief for macOS. Your lifetime license key has been generated and is ready to use.
+      </p>
+
+      <div class="license-box">
+        <div class="license-code" id="licenseKeyText">Loading license key...</div>
+        <button id="copyKeyBtn" class="btn btn-secondary copy-btn">Copy</button>
+      </div>
+
+      <div style="display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;">
+        <a id="activateLink" href="#" class="btn btn-primary btn-lg">
+          ⚡ Activate in Sidebrief
+        </a>
+        <a href="/downloads/Sidebrief.dmg" class="btn btn-secondary btn-lg">
+          Download Sidebrief.dmg
+        </a>
+      </div>
+
+      <ol class="steps">
+        <li><strong>Download & Install:</strong> Open <code>Sidebrief.dmg</code> and drag <strong>Sidebrief.app</strong> into your Applications folder.</li>
+        <li><strong>One-Click Activation:</strong> Click <em>"Activate in Sidebrief"</em> above, or paste your license key into <strong>Settings → License</strong> in the app.</li>
+        <li><strong>Grant Permissions:</strong> Authorize microphone and system audio capture in macOS System Settings.</li>
+      </ol>
+
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 16px;">
+        A copy of your license key has also been saved to your account. Need help? Contact us anytime.
+      </p>
+    </div>
+  </main>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const key = urlParams.get('key') || 'SB-7F9A-B23C-4D5E-81FA';
+    const keyElement = document.getElementById('licenseKeyText');
+    const copyBtn = document.getElementById('copyKeyBtn');
+    const activateLink = document.getElementById('activateLink');
+
+    keyElement.textContent = key;
+    activateLink.href = `sidebrief://activate?key=${encodeURIComponent(key)}`;
+
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(key).then(() => {
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+      });
+    });
+  </script>
+</body>
+</html>

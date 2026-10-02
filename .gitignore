@@ -1,0 +1,35 @@
+# Build and package manager
+.build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+build/
+dist/
+*.dmg
+node_modules/
+
+# Secrets and environment files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Audio and temporary test files
+*.wav
+*.pcm
+*.m4a
+*.enc
+*.sqlite*
+.tmp/
+recordings/
+chunks/
+exports/
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+Thumbs.db
