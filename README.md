@@ -29,6 +29,27 @@ Sidebrief.entitlements | macOS App entitlements (microphone access, network clie
 - Chat: ask your own question, inspect a statement, or request a deeper explanation during or after the meeting.
 - Each suggestion can include a concise recommended response and two useful alternatives. Pin a response while reading it, expand the evidence, request a shorter version, or ask a follow-up. New suggestions must never steal focus or move a pinned card.
 - Afterward, review timestamp-linked audio, an editable transcript, a summary, decisions, commitments, and unresolved questions. Search prior meetings and connected sources without manually collecting everything into a prompt.
+## Installation
+
+### Homebrew (Recommended)
+
+Install Sidebrief with one command:
+
+```bash
+brew install KevinOBytes/sidebrief/sidebrief
+```
+
+Or tap the repository first:
+
+```bash
+brew tap KevinOBytes/sidebrief
+brew install --cask sidebrief
+```
+
+### Direct Download
+
+Download the latest signed release directly from [GitHub Releases](https://github.com/KevinOBytes/sidebrief/releases/latest):
+* [Download Sidebrief.dmg (v1.0.0)](https://github.com/KevinOBytes/sidebrief/releases/download/v1.0.0/Sidebrief.dmg)
 
 ## Core requirements
 
