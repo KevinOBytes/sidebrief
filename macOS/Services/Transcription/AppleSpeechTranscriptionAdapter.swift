@@ -45,11 +45,17 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
     // MARK: - Lifecycle
 
     public func startSession(meetingId: String, track: AudioTrack) async throws {
-        // Check / request authorization
-        let authStatus = await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { status in
-                continuation.resume(returning: status)
+        // Check / request authorization only if not yet determined
+        let currentStatus = SFSpeechRecognizer.authorizationStatus()
+        let authStatus: SFSpeechRecognizerAuthorizationStatus
+        if currentStatus == .notDetermined {
+            authStatus = await withCheckedContinuation { continuation in
+                SFSpeechRecognizer.requestAuthorization { status in
+                    continuation.resume(returning: status)
+                }
             }
+        } else {
+            authStatus = currentStatus
         }
 
         guard authStatus == .authorized else {

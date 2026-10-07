@@ -87,22 +87,10 @@ public final class AudioCaptureService: NSObject, @unchecked Sendable {
 
         guard shouldProceed else { return }
 
-        // Request Microphone and Screen Capture permissions if needed (only once per instance)
+        // Request Microphone permission if not determined
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         if micStatus == .notDetermined {
             _ = await AVCaptureDevice.requestAccess(for: .audio)
-        }
-
-        let shouldPromptScreen: Bool = syncQueue.sync {
-            if !hasRequestedScreenCaptureAccess {
-                hasRequestedScreenCaptureAccess = true
-                return true
-            }
-            return false
-        }
-
-        if !CGPreflightScreenCaptureAccess() && shouldPromptScreen {
-            CGRequestScreenCaptureAccess()
         }
 
         meetingStartTimeMs = Int64(Date().timeIntervalSince1970 * 1000)
@@ -329,19 +317,15 @@ public final class AudioCaptureService: NSObject, @unchecked Sendable {
     // MARK: - ScreenCaptureKit System Audio
 
     private func setupScreenCaptureKitAudio(scope: SystemCaptureScope) async throws {
-        guard CGPreflightScreenCaptureAccess() else {
-            // User has not yet granted Screen Recording in System Settings.
-            // Degrade to mic-only capture cleanly without triggering repetitive OS popups.
-            syncQueue.sync {
-                _currentState = .degraded
-            }
-            delegate?.audioCaptureService(self, didChangeState: .degraded)
-            return
-        }
-
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-            guard let display = content.displays.first else { return }
+            guard let display = content.displays.first else {
+                syncQueue.sync {
+                    _currentState = .degraded
+                }
+                delegate?.audioCaptureService(self, didChangeState: .degraded)
+                return
+            }
 
             let filter: SCContentFilter
             switch scope {
