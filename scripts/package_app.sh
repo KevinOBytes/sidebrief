@@ -89,10 +89,54 @@ cat << 'EOF' > "$CONTENTS/Info.plist"
 </plist>
 EOF
 
-# 5. Codesign Ad-Hoc with Entitlements
+# 5. Codesign with Persistent Code Signing Identity and Entitlements
 if command -v codesign &> /dev/null; then
-    echo "--> Signing bundle with stable designated requirement and entitlements..."
-    codesign --force --deep --sign - -r='designated => identifier "com.sidebrief.macos"' --entitlements "$ROOT_DIR/Sidebrief.entitlements" "$APP_BUNDLE"
+    SIGN_IDENTITY="Sidebrief Development"
+
+    # Check if a valid codesigning identity exists
+    if ! security find-identity -p codesigning -v | grep -q "\"$SIGN_IDENTITY\""; then
+        # Check if another valid developer identity exists
+        DEV_ID=$(security find-identity -p codesigning -v | grep -o '\"[^\"]*\"' | head -n 1 | tr -d '\"' || true)
+        if [ -n "$DEV_ID" ]; then
+            SIGN_IDENTITY="$DEV_ID"
+        else
+            echo "--> Creating local persistent 'Sidebrief Development' certificate for stable TCC permissions..."
+            CERT_CONF=$(mktemp /tmp/sidebrief_cert_conf.XXXXXX)
+            cat << 'EOF_CONF' > "$CERT_CONF"
+[ req ]
+default_bits        = 2048
+default_md          = sha256
+distinguished_name  = req_distinguished_name
+prompt              = no
+x509_extensions     = v3_codesign
+
+[ req_distinguished_name ]
+CN = Sidebrief Development
+
+[ v3_codesign ]
+keyUsage            = critical, digitalSignature
+extendedKeyUsage    = critical, codeSigning
+EOF_CONF
+            KEY_FILE=$(mktemp /tmp/sidebrief_key.XXXXXX)
+            CERT_FILE=$(mktemp /tmp/sidebrief_cert.XXXXXX)
+            P12_FILE=$(mktemp /tmp/sidebrief_p12.XXXXXX)
+            openssl req -x509 -new -nodes -keyout "$KEY_FILE" -out "$CERT_FILE" -days 3650 -config "$CERT_CONF" 2>/dev/null
+            openssl pkcs12 -export -legacy -out "$P12_FILE" -inkey "$KEY_FILE" -in "$CERT_FILE" -passout pass:sidebrief 2>/dev/null
+            security import "$P12_FILE" -k ~/Library/Keychains/login.keychain-db -P sidebrief -T /usr/bin/codesign 2>/dev/null || true
+            security add-trusted-cert -r trustRoot -p codeSign "$CERT_FILE" 2>/dev/null || true
+            rm -f "$CERT_CONF" "$KEY_FILE" "$CERT_FILE" "$P12_FILE"
+        fi
+    fi
+
+    echo "--> Signing bundle with identity: '$SIGN_IDENTITY' and entitlements..."
+    codesign --force --deep --sign "$SIGN_IDENTITY" --entitlements "$ROOT_DIR/Sidebrief.entitlements" "$APP_BUNDLE" || {
+        echo "--> Fallback: Signing ad-hoc..."
+        codesign --force --deep --sign - --entitlements "$ROOT_DIR/Sidebrief.entitlements" "$APP_BUNDLE"
+    }
+
+    # Clear quarantine and provenance attributes
+    xattr -cr "$APP_BUNDLE" 2>/dev/null || true
+
     echo "--> Codesign verified:"
     codesign --verify --verbose "$APP_BUNDLE"
     codesign -d -r- "$APP_BUNDLE"
@@ -104,6 +148,7 @@ pkill -f SidebriefApp || true
 sleep 0.5
 rm -rf /Applications/Sidebrief.app
 cp -R "$APP_BUNDLE" /Applications/Sidebrief.app
+xattr -cr /Applications/Sidebrief.app 2>/dev/null || true
 
 if [ -f "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister" ]; then
     echo "--> Refreshing LaunchServices register..."
