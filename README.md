@@ -49,7 +49,7 @@ brew install --cask sidebrief
 ### Direct Download
 
 Download the latest signed release directly from [GitHub Releases](https://github.com/KevinOBytes/sidebrief/releases/latest):
-* [Download Sidebrief.dmg (v1.0.0)](https://github.com/KevinOBytes/sidebrief/releases/download/v1.0.0/Sidebrief.dmg)
+* [Download Sidebrief.dmg (v1.0.1)](https://github.com/KevinOBytes/sidebrief/releases/download/v1.0.1/Sidebrief.dmg)
 
 ## Core requirements
 
