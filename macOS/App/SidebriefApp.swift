@@ -21,7 +21,22 @@ public struct SidebriefApp: App {
             } detail: {
                 detailView
             }
-            .frame(minWidth: 980, idealWidth: 1220, maxWidth: .infinity, minHeight: 680, idealHeight: 820, maxHeight: .infinity)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: {
+                        selectedSidebarItem = .live
+                        if coordinator.captureState == .idle || coordinator.captureState == .failed {
+                            Task { await coordinator.startMeeting() }
+                        }
+                    }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "plus.circle.fill")
+                            Text("New Meeting")
+                        }
+                    }
+                    .help("Start New Meeting (⌘N)")
+                }
+            }
             .sheet(isPresented: $isShowingOnboarding) {
                 OnboardingView(isPresented: $isShowingOnboarding) { configuredSpaces, activeSpaceId in
                     hasCompletedOnboarding = true
@@ -49,6 +64,16 @@ public struct SidebriefApp: App {
         }
         .defaultSize(width: 1220, height: 820)
         .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("New Meeting") {
+                    selectedSidebarItem = .live
+                    if coordinator.captureState == .idle || coordinator.captureState == .failed {
+                        Task { await coordinator.startMeeting() }
+                    }
+                }
+                .keyboardShortcut("n", modifiers: .command)
+            }
+
             CommandMenu("Sidebrief") {
                 Button("Run Setup Wizard...") {
                     isShowingOnboarding = true
@@ -106,7 +131,7 @@ public struct SidebriefApp: App {
                     Task { await coordinator.stopMeeting() }
                 }
             } else {
-                Button("Start Live Meeting") {
+                Button("Start New Meeting (⌘N)") {
                     Task {
                         await coordinator.startMeeting()
                     }
@@ -198,48 +223,79 @@ public struct SidebriefApp: App {
     }
 
     private var sidebarView: some View {
-        List(selection: $selectedSidebarItem) {
-            Section("Context Space") {
-                Picker("Active Space", selection: Binding(
-                    get: { coordinator.activeSpace.id },
-                    set: { newId in
-                        if let sp = coordinator.availableSpaces.first(where: { $0.id == newId }) {
-                            coordinator.setActiveSpace(sp)
+        VStack(spacing: 0) {
+            // Prominent "New Meeting" Action Button at top of sidebar
+            Button(action: {
+                selectedSidebarItem = .live
+                if coordinator.captureState == .idle || coordinator.captureState == .failed {
+                    Task { await coordinator.startMeeting() }
+                }
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 15))
+                    Text("New Meeting")
+                        .font(.system(size: 13, weight: .semibold))
+                    Spacer()
+                    Text("⌘N")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .opacity(0.7)
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .background(Color.accentColor)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 6)
+
+            List(selection: $selectedSidebarItem) {
+                Section("Context Space") {
+                    Picker("Active Space", selection: Binding(
+                        get: { coordinator.activeSpace.id },
+                        set: { newId in
+                            if let sp = coordinator.availableSpaces.first(where: { $0.id == newId }) {
+                                coordinator.setActiveSpace(sp)
+                            }
+                        }
+                    )) {
+                        ForEach(coordinator.availableSpaces) { space in
+                            Text(space.name).tag(space.id)
                         }
                     }
-                )) {
-                    ForEach(coordinator.availableSpaces) { space in
-                        Text(space.name).tag(space.id)
+                    .labelsHidden()
+                }
+
+                Section("Session") {
+                    NavigationLink(value: SidebarItem.live) {
+                        Label("Live Meeting", systemImage: "waveform")
                     }
                 }
-                .labelsHidden()
-            }
 
-            Section("Session") {
-                NavigationLink(value: SidebarItem.live) {
-                    Label("Live Meeting", systemImage: "waveform")
+                Section("History") {
+                    NavigationLink(value: SidebarItem.pastMeetings) {
+                        Label("Past Meetings (\(coordinator.pastMeetings.count))", systemImage: "clock.arrow.circlepath")
+                    }
+                }
+
+                Section("Knowledge") {
+                    NavigationLink(value: SidebarItem.memory) {
+                        Label("Memory & Context (\(coordinator.memoryFacts.count))", systemImage: "brain.head.profile")
+                    }
+                }
+
+                Section("Preferences") {
+                    NavigationLink(value: SidebarItem.settings) {
+                        Label("Settings", systemImage: "gear")
+                    }
                 }
             }
-
-            Section("History") {
-                NavigationLink(value: SidebarItem.pastMeetings) {
-                    Label("Past Meetings (\(coordinator.pastMeetings.count))", systemImage: "clock.arrow.circlepath")
-                }
-            }
-
-            Section("Knowledge") {
-                NavigationLink(value: SidebarItem.memory) {
-                    Label("Memory & Context (\(coordinator.memoryFacts.count))", systemImage: "brain.head.profile")
-                }
-            }
-
-            Section("Preferences") {
-                NavigationLink(value: SidebarItem.settings) {
-                    Label("Settings", systemImage: "gear")
-                }
-            }
+            .listStyle(.sidebar)
         }
-        .listStyle(.sidebar)
         .frame(minWidth: 200)
     }
 
@@ -327,6 +383,12 @@ public struct SidebriefApp: App {
                 },
                 onSearchMeetings: { query, spaceId in
                     coordinator.searchMeetings(query: query, spaceId: spaceId)
+                },
+                onStartNewMeeting: {
+                    selectedSidebarItem = .live
+                    if coordinator.captureState == .idle || coordinator.captureState == .failed {
+                        Task { await coordinator.startMeeting() }
+                    }
                 }
             )
 

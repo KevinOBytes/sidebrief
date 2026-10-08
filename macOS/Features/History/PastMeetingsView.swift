@@ -18,6 +18,7 @@ public struct PastMeetingsView: View {
     public var onExportSRT: () -> Void
     public var availableSpaces: [ContextSpace] = []
     public var onSearchMeetings: ((String, String?) -> [Meeting])? = nil
+    public var onStartNewMeeting: (() -> Void)? = nil
 
     @State private var searchText: String = ""
     @State private var selectedSpaceFilter: String = "all"
@@ -37,7 +38,8 @@ public struct PastMeetingsView: View {
         onExportMarkdown: @escaping () -> Void,
         onExportJSON: @escaping () -> Void,
         onExportSRT: @escaping () -> Void,
-        onSearchMeetings: ((String, String?) -> [Meeting])? = nil
+        onSearchMeetings: ((String, String?) -> [Meeting])? = nil,
+        onStartNewMeeting: (() -> Void)? = nil
     ) {
         self._pastMeetings = pastMeetings
         self._selectedPastMeeting = selectedPastMeeting
@@ -54,6 +56,7 @@ public struct PastMeetingsView: View {
         self.onExportJSON = onExportJSON
         self.onExportSRT = onExportSRT
         self.onSearchMeetings = onSearchMeetings
+        self.onStartNewMeeting = onStartNewMeeting
     }
 
     private var filteredMeetings: [Meeting] {
@@ -89,8 +92,8 @@ public struct PastMeetingsView: View {
 
     private var masterMeetingListView: some View {
         VStack(spacing: 0) {
-            // Header with title and count
-            HStack {
+            // Header with title, count, and New Meeting button
+            HStack(spacing: 8) {
                 Text("Past Meetings")
                     .font(.system(size: 16, weight: .bold))
                 Spacer()
@@ -100,6 +103,20 @@ public struct PastMeetingsView: View {
                     .padding(.vertical, 2)
                     .background(Color.secondary.opacity(0.15))
                     .clipShape(Capsule())
+
+                if let onNew = onStartNewMeeting {
+                    Button(action: onNew) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 10, weight: .bold))
+                            Text("New")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .help("Start New Meeting (⌘N)")
+                }
             }
             .padding(.horizontal, 14)
             .padding(.top, 14)

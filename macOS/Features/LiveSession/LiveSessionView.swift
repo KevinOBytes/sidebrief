@@ -220,12 +220,13 @@ public struct LiveSessionView: View {
                 if captureState == .idle || captureState == .failed {
                     Button(action: onStartRecording) {
                         HStack(spacing: 5) {
-                            Image(systemName: "record.circle")
-                            Text("Start Recording")
+                            Image(systemName: "record.circle.fill")
+                            Text("Start New Meeting")
                         }
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
+                    .help("Start New Meeting (⌘N)")
                 } else if captureState == .initializing {
                     HStack(spacing: 6) {
                         ProgressView()
