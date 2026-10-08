@@ -563,10 +563,14 @@ public final class AppCoordinator: ObservableObject {
             } else {
                 transcriptSegments.append(seg)
             }
+            store.saveTranscriptSegments([seg])
             assistanceCoordinator?.handleCommittedSegment(seg)
 
-        case .started, .closed, .error:
+        case .started, .closed:
             break
+
+        case .error(let trackId, let message):
+            NSLog("[Sidebrief STT Error] Track %@: %@", trackId, message)
         }
     }
 
