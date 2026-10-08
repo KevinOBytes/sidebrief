@@ -766,6 +766,40 @@ struct AssistanceTests {
         try await adapter.endSession(trackId: track.id)
     }
 
+    @Test("Apple Speech Transcription Adapter Dual Track Audio Ingestion and Safe Session Handling")
+    func testAppleSpeechAdapterDualTrackChunkIngestion() async throws {
+        let adapter = AppleSpeechTranscriptionAdapter(locale: Locale(identifier: "en-US"))
+        let micTrack = AudioTrack(meetingId: "m-dual-test", sourceType: .microphone, deviceName: "MacBook Pro Mic")
+        let sysTrack = AudioTrack(meetingId: "m-dual-test", sourceType: .systemAudio, deviceName: "ScreenCaptureKit System")
+
+        try await adapter.startSession(meetingId: "m-dual-test", track: micTrack)
+        try await adapter.startSession(meetingId: "m-dual-test", track: sysTrack)
+
+        let sampleCount = 2048
+        var micData = Data(count: sampleCount * 2)
+        micData.withUnsafeMutableBytes { ptr in
+            guard let int16Ptr = ptr.baseAddress?.assumingMemoryBound(to: Int16.self) else { return }
+            for i in 0..<sampleCount {
+                int16Ptr[i] = Int16(sin(Double(i) * 0.08) * 14000.0)
+            }
+        }
+
+        var sysData = Data(count: sampleCount * 2)
+        sysData.withUnsafeMutableBytes { ptr in
+            guard let int16Ptr = ptr.baseAddress?.assumingMemoryBound(to: Int16.self) else { return }
+            for i in 0..<sampleCount {
+                int16Ptr[i] = Int16(cos(Double(i) * 0.04) * 8000.0)
+            }
+        }
+
+        // Concurrent chunk ingestion for both streams without task collision or cancellation loops
+        try await adapter.sendAudioChunk(trackId: micTrack.id, pcmData: micData, sampleCount: sampleCount, offsetMs: 100)
+        try await adapter.sendAudioChunk(trackId: sysTrack.id, pcmData: sysData, sampleCount: sampleCount, offsetMs: 100)
+
+        try await adapter.endSession(trackId: micTrack.id)
+        try await adapter.endSession(trackId: sysTrack.id)
+    }
+
     @Test("Empty Recent Transcript Returns Clean Listening Card")
     func testEmptyRecentTranscriptReturnsCleanListeningCard() async throws {
         let adapter = OpenRouterAdapter(apiKey: "sk-mock-key")
