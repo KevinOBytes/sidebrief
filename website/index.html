@@ -3,8 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sidebrief — The Native macOS Meeting Copilot</title>
-  <meta name="description" content="Sidebrief is a high-performance native macOS meeting copilot with zero-latency ScreenCaptureKit dual-audio capture, ElevenLabs Scribe v2 live STT, and frontier Claude 5 & GPT-5.6 AI assistance.">
+  <title>Sidebrief — The Open-Source Native macOS Meeting Copilot</title>
+  <meta name="description" content="Sidebrief is an open-source native macOS meeting copilot with zero-latency ScreenCaptureKit dual-audio capture, on-device Apple Neural Engine & Groq Whisper STT, and frontier Claude 3.7 & GPT-4o intelligence.">
+  <link rel="canonical" href="https://sidebrief.tkoresearch.com/">
+  
+  <!-- OpenGraph / Social -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://sidebrief.tkoresearch.com/">
+  <meta property="og:title" content="Sidebrief — The Open-Source Native macOS Meeting Copilot">
+  <meta property="og:description" content="Zero-latency ScreenCaptureKit dual audio loopback, on-device Neural Engine & Groq Whisper STT, and frontier LLM guidance. 100% Free & Open Source.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Sidebrief — The Open-Source Native macOS Meeting Copilot">
+  <meta name="twitter:description" content="Zero-latency ScreenCaptureKit dual audio loopback, on-device Neural Engine & Groq Whisper STT, and frontier LLM guidance. 100% Free & Open Source.">
+
   <link rel="stylesheet" href="/style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎙️</text></svg>">
 </head>
@@ -23,14 +34,17 @@
       </a>
       <ul class="nav-links">
         <li><a href="#features">Features</a></li>
-        <li><a href="#docs">Documentation</a></li>
-        <li><a href="#support">Support</a></li>
-        <li><a href="#pricing">Pricing</a></li>
+        <li><a href="#architecture">Architecture</a></li>
+        <li><a href="#docs">Quick Start</a></li>
+        <li><a href="#oss">Open Source</a></li>
         <li><a href="#faq">FAQ</a></li>
       </ul>
       <div class="nav-cta">
-        <a href="#pricing" class="btn btn-secondary">Buy License — $19.99</a>
-        <a href="/downloads/Sidebrief.dmg" class="btn btn-primary">
+        <a href="https://github.com/KevinOBytes/sidebrief" target="_blank" rel="noopener noreferrer" class="btn btn-github">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          Star on GitHub
+        </a>
+        <a href="/download" class="btn btn-primary">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Download .dmg
         </a>
@@ -42,49 +56,59 @@
   <section class="hero wrapper" id="hero">
     <div class="container">
       <div class="hero-badge">
-        <span>✨ v1.0.1 Live • Claude 5 Sonnet & GPT-5.6 Luna Pro • macOS Sonoma & Sequoia</span>
+        <span><span class="pulse-dot"></span> 100% Free &amp; Open Source • Universal macOS Sonoma &amp; Sequoia (Apple Silicon &amp; Intel)</span>
       </div>
       <h1>
-        The Native macOS<br>
+        The Open-Source Native macOS<br>
         <span class="gradient-text">Meeting Copilot</span>
       </h1>
       <p class="hero-subtitle">
-        Zero-latency dual audio capture via ScreenCaptureKit loopback. Sub-500ms provisional streaming transcription with ElevenLabs Scribe v2. Instant strategic guidance with verified alternatives.
+        Zero-latency dual audio capture via ScreenCaptureKit loopback. Sub-150ms speech-to-text with on-device Apple Speech or Groq Whisper. Real-time strategic recommendations with verified alternatives. 100% private, local-first, zero subscriptions.
       </p>
 
       <div class="hero-actions">
-        <a href="/downloads/Sidebrief.dmg" class="btn btn-primary btn-lg">
+        <a href="/download" class="btn btn-primary btn-lg">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Download for macOS (Apple Silicon)
+          Download for macOS (Universal .dmg)
         </a>
-        <a href="#pricing" class="btn btn-secondary btn-lg">
-          Buy Lifetime License — $19.99
+        <a href="https://github.com/KevinOBytes/sidebrief" target="_blank" rel="noopener noreferrer" class="btn btn-github btn-lg">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          View Source on GitHub
         </a>
       </div>
-      <p class="hero-meta">Requires macOS 14.0 Sonoma or later • Universal Apple Silicon & Intel • Offline Safe</p>
+
+      <!-- Quick Install Box -->
+      <div>
+        <div class="terminal-box">
+          <span>$</span>
+          <code id="brewCmd">brew install --cask sidebrief</code>
+          <button class="terminal-copy-btn" onclick="copyTerminalCmd()">Copy</button>
+        </div>
+      </div>
+      <p class="hero-meta">Requires macOS 14.0 Sonoma or later • No Kernel Extensions • Bot-Free Native Loopback</p>
 
       <!-- Stats Metric Bar -->
       <div class="stats-bar">
         <div class="stat-item">
           <h4>&lt;15ms</h4>
-          <p>Buffer Loopback</p>
+          <p>Loopback Latency</p>
         </div>
         <div class="stat-item">
           <h4>256-bit</h4>
           <p>AES-GCM Keychain</p>
         </div>
         <div class="stat-item">
-          <h4>Claude 5</h4>
-          <p>&amp; Luna Pro Copilot</p>
+          <h4>Claude 3.7 &amp; GPT-4o</h4>
+          <p>Frontier Intelligence</p>
         </div>
         <div class="stat-item">
-          <h4>3 Macs</h4>
-          <p>Per $19.99 License</p>
+          <h4>100% Free</h4>
+          <p>Open Source (Apache/MIT)</p>
         </div>
       </div>
 
       <!-- Native AppKit Floating Assistant Mockup -->
-      <div class="mockup-preview parallax-layer-mid">
+      <div class="mockup-preview parallax-layer-mid" id="architecture">
         <div class="mockup-header">
           <div class="traffic-dots">
             <div class="dot dot-red"></div>
@@ -118,7 +142,7 @@
           <div class="card-preview">
             <span class="card-badge">⚡ Strategic Recommendation (8s cadence)</span>
             <div class="card-text">
-              "Affirm ScreenCaptureKit loopback dual-track separation and stage ElevenLabs Scribe v2 VAD deduplication behind an immediate canary build."
+              "Affirm ScreenCaptureKit loopback dual-track separation and stage the Active Channel VAD commit strategy behind an immediate canary build."
             </div>
             <div class="card-alternatives">
               <div class="alt-item">
@@ -140,45 +164,45 @@
   <section class="features" id="features">
     <div class="container">
       <div class="section-header">
-        <h2>Engineered for Mission-Critical Meetings</h2>
-        <p>Built exclusively as a native macOS AppKit/SwiftUI utility for daily executive, research, and engineering use.</p>
+        <h2>Engineered for High-Stakes Meetings</h2>
+        <p>A native macOS utility built with AppKit &amp; SwiftUI for engineers, founders, and executives who refuse bots.</p>
       </div>
 
       <div class="feature-grid">
         <div class="feature-card">
           <div class="feature-icon">🎙️</div>
           <h3>Dual-Audio Loopback</h3>
-          <p>Captures your microphone and macOS system audio as independent PCM streams with zero buffer drops and separate hardware VU meters.</p>
+          <p>Captures your microphone and macOS system audio as independent PCM streams via ScreenCaptureKit. Zero virtual audio kexts, zero audio delay, and no meeting bots.</p>
         </div>
 
         <div class="feature-card">
           <div class="feature-icon">⚡</div>
-          <h3>ElevenLabs Scribe v2 STT</h3>
-          <p>Sub-500ms streaming transcription with real-time VAD overlap deduplication. Eliminates duplicate bursts and dropped speech turns.</p>
+          <h3>Active Channel VAD Router</h3>
+          <p>Real-time RMS energy analysis with 350ms speech hangover cleanly isolates active speakers. Auto-commits turns when conversation alternates between You and Remote participants.</p>
+        </div>
+
+        <div class="feature-card" id="stt">
+          <div class="feature-icon">🧠</div>
+          <h3>Hybrid STT: Free On-Device or Cloud</h3>
+          <p>Run completely free and offline with Apple Neural Engine STT, or auto-detect Groq keys for sub-150ms Whisper Large v3 Turbo, or ElevenLabs Scribe v2.</p>
         </div>
 
         <div class="feature-card">
-          <div class="feature-icon">🧠</div>
-          <h3>Frontier LLMs via OpenRouter</h3>
-          <p>Seamlessly switch between Claude 5 Sonnet, Claude 5 Opus, GPT-5.6 Luna Pro, or direct Anthropic/OpenAI API keys in Settings.</p>
+          <div class="feature-icon">🤖</div>
+          <h3>Frontier &amp; Local LLMs</h3>
+          <p>Seamlessly connect OpenRouter, Anthropic (Claude 3.7 Sonnet), OpenAI (GPT-4o), DeepSeek R1, Groq (Llama 3.3 70B), or run locally with Ollama / LM Studio.</p>
         </div>
 
         <div class="feature-card">
           <div class="feature-icon">🔒</div>
-          <h3>Local-First &amp; Encrypted</h3>
-          <p>Zero plaintext recordings committed to disk. 256-bit AES-GCM meeting keys stored strictly in macOS Keychain. Cloud sync to Neon PostgreSQL.</p>
-        </div>
-
-        <div class="feature-card">
-          <div class="feature-icon">🏢</div>
-          <h3>Streamlined Work Space</h3>
-          <p>Defaults to a clean single 'Work' workspace with customizable copilot prompts, retention limits, and custom technical vocabulary.</p>
+          <h3>Zero-Plaintext Security Invariant</h3>
+          <p>Audio chunks are encrypted in-memory with AES-GCM 256-bit before disk commit. Meeting keys reside exclusively in macOS Keychain. Local SQLite first.</p>
         </div>
 
         <div class="feature-card">
           <div class="feature-icon">🩺</div>
-          <h3>Built-in Audio Diagnostics</h3>
-          <p>Interactive microphone check, 440/880Hz audio calibration tones, 5-second listen tests, and ScreenCaptureKit loopback verification in Settings.</p>
+          <h3>Diagnostics &amp; Global Hotkey</h3>
+          <p>Instant summon HUD via <strong>⌃⌥Space</strong>. Built-in VU meters, 440/880Hz audio calibration tones, 5-second listen tests, and loopback health checks in Settings.</p>
         </div>
       </div>
     </div>
@@ -188,8 +212,8 @@
   <section class="docs-hub" id="docs">
     <div class="container">
       <div class="section-header">
-        <h2>Documentation &amp; Architecture</h2>
-        <p>Deep-dive specifications, security guarantees, and quick start instructions.</p>
+        <h2>Documentation &amp; Specifications</h2>
+        <p>Deep-dive architecture, security guarantees, and quick start instructions.</p>
       </div>
 
       <div class="docs-grid">
@@ -197,7 +221,7 @@
           <li><button class="docs-tab-btn active" onclick="switchDocTab(0)">Quick Start Guide</button></li>
           <li><button class="docs-tab-btn" onclick="switchDocTab(1)">Audio Pipeline Spec</button></li>
           <li><button class="docs-tab-btn" onclick="switchDocTab(2)">Keychain &amp; Encryption</button></li>
-          <li><button class="docs-tab-btn" onclick="switchDocTab(3)">Custom Prompts &amp; Spaces</button></li>
+          <li><button class="docs-tab-btn" onclick="switchDocTab(3)">Build from Source</button></li>
         </ul>
 
         <div class="docs-content">
@@ -209,9 +233,9 @@
 # 1. Download and open Sidebrief.dmg
 # 2. Drag Sidebrief.app to /Applications
 # 3. Launch Sidebrief and grant ScreenCaptureKit + Mic permissions
-# 4. Activate your license key or run in 14-day trial mode
+# 4. Press ⌃⌥Space (Control + Option + Space) to summon copilot
             </div>
-            <p>Sidebrief sits in your menu bar. Press <strong>⌃⌥Space</strong> (Control + Option + Space) anytime during a meeting for instant strategic answers.</p>
+            <p>Sidebrief sits in your menu bar. Choose between free on-device Apple Speech STT or fast Groq Whisper in <strong>Settings &rarr; AI Providers</strong>.</p>
           </div>
 
           <!-- Pane 2: Audio Pipeline -->
@@ -220,11 +244,12 @@
             <p>Sidebrief avoids virtual audio cable drivers by utilizing modern ScreenCaptureKit loopback:</p>
             <div class="code-snippet">
 Audio Sources:
-  • Local Mic: AVFoundation AVAudioEngine (16-bit LPCM, 48kHz, mono)
-  • System Audio: ScreenCaptureKit SCStream (16-bit LPCM, 48kHz, stereo)
+  • Local Mic: AVFoundation AVAudioEngine (16-bit LPCM, 48kHz mono)
+  • System Audio: ScreenCaptureKit SCStream (16-bit LPCM, 48kHz stereo)
 Processing:
   • Bounded circular lock-free queue (sub-15ms handoff)
-  • Streaming STT: ElevenLabs Scribe v2 with VAD chunk deduplication
+  • Active Channel VAD Router (350ms hangover, automatic turn commit)
+  • STT: Apple Neural Engine (On-Device) or Groq Whisper Large v3 (~150ms)
             </div>
             <p>System audio and microphone streams are tracked separately with individual timestamps and stream epochs.</p>
           </div>
@@ -232,114 +257,103 @@ Processing:
           <!-- Pane 3: Keychain & Security -->
           <div class="docs-pane" id="docPane2">
             <h3>Zero-Plaintext Security Invariants</h3>
-            <p>We treat every spoken word and meeting artifact as confidential:</p>
+            <p>Every spoken word and meeting artifact is treated as confidential:</p>
             <div class="code-snippet">
 Key Management:
   • Every meeting generates a unique 256-bit AES-GCM symmetric key
   • Keys are committed strictly to macOS Keychain (kSecClassGenericPassword)
   • Audio chunks are encrypted in-memory before disk commit
-  • Cloud sync to Neon PostgreSQL uses Row-Level Security (RLS) and pgvector
+  • Local SQLite database is primary source of truth; zero cloud raw blobs
             </div>
-            <p>Offline guarantee: Network unreachability or cloud latency never interrupts ongoing local audio recording.</p>
+            <p>Offline guarantee: Network unreachability or provider latency never interrupts ongoing local audio recording.</p>
           </div>
 
-          <!-- Pane 4: Custom Prompts -->
+          <!-- Pane 4: Build from Source -->
           <div class="docs-pane" id="docPane3">
-            <h3>Custom Prompts &amp; Personas</h3>
-            <p>Sidebrief adapts its copilot persona to your workspace domain:</p>
+            <h3>Build from Source</h3>
+            <p>Sidebrief is built with Swift Package Manager and standard Xcode tools:</p>
             <div class="code-snippet">
-Default Work Space Prompt:
-"You are an executive and technical copilot for Work meetings.
-Provide 1 concise recommendation (under 50 words) plus up to 2
-distinct strategic alternatives. Preserve source citations."
+# Clone the repository
+git clone https://github.com/KevinOBytes/sidebrief.git
+cd sidebrief
+
+# Run test suite (43 unit tests)
+swift test
+
+# Build release bundle & DMG installer
+./scripts/build_dmg.sh
             </div>
-            <p>You can customize prompts, retention schedules, and allowed AI providers anytime in <strong>Settings &rarr; Context Spaces</strong>.</p>
+            <p>The resulting app bundle will be installed to <code>/Applications/Sidebrief.app</code> with persistent code signing for TCC permissions.</p>
           </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Support & Contact Section -->
-  <section class="support-section" id="support">
+  <!-- Open Source & Community Section -->
+  <section class="pricing" id="oss">
     <div class="container">
       <div class="section-header">
-        <h2>Support &amp; Customer Care</h2>
-        <p>Direct assistance from the engineering team at TKO Research.</p>
+        <h2>100% Free &amp; Open Source</h2>
+        <p>No paywalls. No subscriptions. No lock-in. Your meetings belong to you.</p>
       </div>
 
-      <div class="support-grid">
-        <!-- Card 1: License Key Recovery -->
-        <div class="support-card">
-          <div class="feature-icon">🔑</div>
-          <h3>Find My License Key</h3>
-          <p>Purchased Sidebrief and lost your key? Enter your purchase email to receive an instant recovery email from <strong>support@tkoresearch.com</strong> with your 1-click activation link.</p>
+      <div class="oss-cards-grid">
+        <!-- Card 1: Community Edition -->
+        <div class="oss-card featured">
+          <div class="pricing-badge" style="background: var(--accent-gradient); color: #fff; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700; width: fit-content; margin-bottom: 12px;">Community Edition</div>
+          <h3>Sidebrief for macOS</h3>
+          <div class="price">$0</div>
+          <div class="price-period">Free forever • Open Source (Apache/MIT)</div>
 
-          <form id="magicLinkForm" onsubmit="handleMagicLink(event)">
-            <input type="email" id="recoveryEmail" class="input-field" placeholder="Enter your purchase email..." required>
-            <button type="submit" id="recoveryBtn" class="btn btn-secondary" style="width: 100%;">
-              Send My License Key
-            </button>
-          </form>
-          <div id="recoveryStatus" style="margin-top: 12px; font-size: 0.88rem;"></div>
+          <ul class="pricing-features">
+            <li><span>✓</span> Full native macOS client with floating AppKit copilot</li>
+            <li><span>✓</span> Dual-audio capture (ScreenCaptureKit loopback + mic)</li>
+            <li><span>✓</span> Active Channel VAD Router with turn auto-commit</li>
+            <li><span>✓</span> Free on-device Apple Speech Neural Engine STT</li>
+            <li><span>✓</span> Bring Your Own Key (OpenRouter, Groq, Claude 3.7, GPT-4o, Ollama)</li>
+            <li><span>✓</span> 256-bit AES-GCM Keychain encrypted local SQLite storage</li>
+            <li><span>✓</span> Global HUD summon hotkey (⌃⌥Space)</li>
+            <li><span>✓</span> Universal binary for Apple Silicon (M1–M4) &amp; Intel</li>
+          </ul>
+
+          <div style="margin-top: auto; display: flex; flex-direction: column; gap: 12px;">
+            <a href="/download" class="btn btn-primary btn-lg" style="width: 100%;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Download Sidebrief.dmg
+            </a>
+            <a href="https://github.com/KevinOBytes/sidebrief" target="_blank" rel="noopener noreferrer" class="btn btn-github" style="width: 100%;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+              Star &amp; Fork on GitHub
+            </a>
+          </div>
         </div>
 
-        <!-- Card 2: Engineering Contact -->
-        <div class="support-card">
-          <div class="feature-icon">✉️</div>
-          <h3>Contact Engineering</h3>
-          <p>Have a technical inquiry, audio device configuration question, or bug report? We answer within 24 hours.</p>
+        <!-- Card 2: Developer & Contributor -->
+        <div class="oss-card">
+          <div class="pricing-badge" style="background: rgba(255, 255, 255, 0.1); color: var(--text-primary); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700; width: fit-content; margin-bottom: 12px;">Contributors &amp; Teams</div>
+          <h3>Developer Hub</h3>
+          <div class="price" style="font-size: 2.8rem; margin: 16px 0 6px;">Open Code</div>
+          <div class="price-period">Contribute PRs, connectors &amp; extensions</div>
 
-          <form id="contactForm" onsubmit="handleContact(event)">
-            <input type="text" id="contactName" class="input-field" placeholder="Your Name..." required>
-            <input type="email" id="contactEmail" class="input-field" placeholder="Your Email Address..." required>
-            <textarea id="contactMsg" class="input-field" style="height: 90px; resize: vertical;" placeholder="How can we help you?..." required></textarea>
-            <button type="submit" id="contactBtn" class="btn btn-primary" style="width: 100%;">
-              Send Message
-            </button>
-          </form>
-          <div id="contactStatus" style="margin-top: 12px; font-size: 0.88rem;"></div>
+          <ul class="pricing-features">
+            <li><span>✓</span> Inspect every line of audio processing &amp; cryptography</li>
+            <li><span>✓</span> Add custom connectors (Gmail, Google Drive, Slack, GitHub)</li>
+            <li><span>✓</span> Deploy internal self-hosted Neon PostgreSQL sync clusters</li>
+            <li><span>✓</span> Build custom contextual prompts &amp; domain personas</li>
+            <li><span>✓</span> File feature requests, issue reports, and RFC proposals</li>
+            <li><span>✓</span> Sponsor core maintenance and development sprints</li>
+          </ul>
+
+          <div style="margin-top: auto; display: flex; flex-direction: column; gap: 12px;">
+            <a href="https://github.com/KevinOBytes/sidebrief/issues" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-lg" style="width: 100%;">
+              Open GitHub Issues
+            </a>
+            <a href="https://github.com/KevinOBytes/sidebrief/blob/main/docs/DESIGN.md" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="width: 100%;">
+              Read Design &amp; Architecture RFC
+            </a>
+          </div>
         </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Pricing Section -->
-  <section class="pricing" id="pricing">
-    <div class="container">
-      <div class="section-header">
-        <h2>Simple, Fair Pricing</h2>
-        <p>One payment. No subscriptions. Yours forever.</p>
-      </div>
-
-      <div class="pricing-card">
-        <div class="pricing-badge">Lifetime License</div>
-        <h3>Sidebrief for macOS</h3>
-        <div class="price">$19.99</div>
-        <div class="price-period">One-time payment • Lifetime access</div>
-
-        <ul class="pricing-features">
-          <li><span>✓</span> Full native macOS client with floating AppKit copilot</li>
-          <li><span>✓</span> Dual-audio capture (ScreenCaptureKit loopback + mic)</li>
-          <li><span>✓</span> ElevenLabs Scribe v2 streaming STT with VAD deduplication</li>
-          <li><span>✓</span> Frontier LLM access (Claude 5 Sonnet, Claude 5 Opus, GPT-5.6)</li>
-          <li><span>✓</span> Encrypted SQLite local store + Neon PostgreSQL cloud sync</li>
-          <li><span>✓</span> Valid for up to 3 personal Mac computers</li>
-          <li><span>✓</span> Free updates and built-in software update checker</li>
-          <li><span>✓</span> 14-day money-back guarantee</li>
-        </ul>
-
-        <div class="email-input-group">
-          <input type="email" id="buyerEmail" class="input-field" placeholder="Enter your email to receive your license..." required>
-        </div>
-
-        <button id="checkoutBtn" class="btn btn-primary btn-lg" style="width: 100%;">
-          Purchase Lifetime License ($19.99)
-        </button>
-
-        <p style="margin-top: 16px; font-size: 0.82rem; color: var(--text-muted);">
-          Secure checkout via Stripe. License key delivered via email from <strong>support@tkoresearch.com</strong> with 1-click activation.
-        </p>
       </div>
     </div>
   </section>
@@ -355,11 +369,31 @@ distinct strategic alternatives. Preserve source citations."
       <div class="faq-list">
         <div class="faq-item open">
           <button class="faq-question" onclick="toggleFaq(this)">
-            <span>Does Sidebrief require screen sharing or bot attendees?</span>
+            <span>Does Sidebrief invite a bot attendee or require screen sharing?</span>
+            <span>−</span>
+          </button>
+          <div class="faq-answer">
+            No. Sidebrief operates entirely on your local machine using Apple's ScreenCaptureKit audio-only loopback framework. No external bot joins your Zoom, Teams, or Google Meet room, and attendees never see recording notifications or bot avatars.
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" onclick="toggleFaq(this)">
+            <span>Can I run Sidebrief completely offline for $0/month?</span>
             <span>+</span>
           </button>
           <div class="faq-answer">
-            No. Sidebrief operates entirely on your local machine using Apple's ScreenCaptureKit audio-only loopback API. No bot attends or joins your meeting, and your attendees never see screen recording prompts.
+            Yes! In Settings &rarr; AI Providers, set Speech-to-Text to Apple Speech (which runs on your Mac's Apple Neural Engine for free) and connect your local Ollama or LM Studio instance for AI assistance. Zero cloud API calls and zero subscription fees.
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" onclick="toggleFaq(this)">
+            <span>How does the Active Channel VAD Router fix previous STT issues?</span>
+            <span>+</span>
+          </button>
+          <div class="faq-answer">
+            Previous versions alternated raw 42ms buffers from both microphone and system audio into a single stream, creating acoustic comb filtering and silence fragmentation. The new Active Channel VAD Router uses real-time RMS energy detection with 350ms speech hangover to route only the active speaking channel, auto-committing turns when speakers alternate.
           </div>
         </div>
 
@@ -369,17 +403,7 @@ distinct strategic alternatives. Preserve source citations."
             <span>+</span>
           </button>
           <div class="faq-answer">
-            Yes! Sidebrief has a dedicated AI Providers switcher in Settings allowing you to enter personal keys for OpenRouter, Anthropic, ElevenLabs, OpenAI, or local OpenAI-compatible endpoints (like Ollama or LM Studio).
-          </div>
-        </div>
-
-        <div class="faq-item">
-          <button class="faq-question" onclick="toggleFaq(this)">
-            <span>How does the $19.99 license work across my Macs?</span>
-            <span>+</span>
-          </button>
-          <div class="faq-answer">
-            Your single license allows active installation on up to 3 personal Mac computers (e.g. your MacBook Pro, iMac, and Mac mini). You can manage or deactivate devices anytime in Settings &rarr; License.
+            Yes. Sidebrief has native BYOK support for OpenRouter, Anthropic, OpenAI, ElevenLabs, and Groq. Entering a Groq API key (starts with <code>gsk_</code>) automatically enables sub-150ms Whisper Large v3 Turbo transcription.
           </div>
         </div>
 
@@ -389,7 +413,49 @@ distinct strategic alternatives. Preserve source citations."
             <span>+</span>
           </button>
           <div class="faq-answer">
-            Recording and local encryption never stop. Sidebrief commits authenticated 256-bit AES-GCM chunks directly to your local encrypted SQLite vault. When your connection is restored, background sync seamlessly resumes without dropping audio frames.
+            Recording and local encryption never stop. Sidebrief commits authenticated 256-bit AES-GCM chunks directly to your local encrypted SQLite vault. Background tasks and optional cloud sync queue into a durable local outbox without dropping audio frames.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Community & Support Section -->
+  <section class="support-section" id="support">
+    <div class="container">
+      <div class="section-header">
+        <h2>Community &amp; Contact</h2>
+        <p>Built with care by TKO Research Labs. Open for contributions and feedback.</p>
+      </div>
+
+      <div class="support-grid">
+        <!-- Card 1: GitHub Community -->
+        <div class="support-card">
+          <div class="feature-icon">🐙</div>
+          <h3>GitHub Discussions &amp; Bugs</h3>
+          <p>Found an edge case with Bluetooth audio switching? Have ideas for new connector integrations? Join the conversation on GitHub.</p>
+          <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+            <a href="https://github.com/KevinOBytes/sidebrief/issues" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="flex: 1;">
+              File an Issue
+            </a>
+            <a href="https://github.com/KevinOBytes/sidebrief" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" style="flex: 1;">
+              Repository
+            </a>
+          </div>
+        </div>
+
+        <!-- Card 2: Direct Contact -->
+        <div class="support-card">
+          <div class="feature-icon">✉️</div>
+          <h3>Direct Engineering Contact</h3>
+          <p>Have private enterprise inquiries, deployment questions, or security disclosures? Reach out to the author directly:</p>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <a href="mailto:kevin@tkoresearch.com" class="btn btn-secondary" style="justify-content: flex-start;">
+              <span>✉️</span> kevin@tkoresearch.com
+            </a>
+            <a href="https://sidebrief.tkoresearch.com" class="btn btn-secondary" style="justify-content: flex-start;">
+              <span>🌐</span> sidebrief.tkoresearch.com
+            </a>
           </div>
         </div>
       </div>
@@ -406,7 +472,7 @@ distinct strategic alternatives. Preserve source citations."
             <span>Sidebrief</span>
           </div>
           <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.6; max-width: 320px;">
-            The native macOS meeting copilot. Private, zero-latency dual audio capture, live ElevenLabs transcription, and frontier Claude 5 guidance.
+            The open-source native macOS meeting copilot. Private, zero-latency dual audio capture, live VAD transcription, and frontier LLM guidance.
           </p>
           <p style="margin-top: 14px; font-size: 0.85rem; color: var(--text-muted);">
             Engineered by TKO Research Labs.
@@ -417,9 +483,9 @@ distinct strategic alternatives. Preserve source citations."
           <h5>Product</h5>
           <ul>
             <li><a href="#features">Features</a></li>
-            <li><a href="/downloads/Sidebrief.dmg">Download DMG</a></li>
-            <li><a href="#pricing">Pricing ($19.99)</a></li>
-            <li><a href="/api/v1/updates/check">Release Notes</a></li>
+            <li><a href="/download">Download DMG</a></li>
+            <li><a href="#oss">Open Source</a></li>
+            <li><a href="https://github.com/KevinOBytes/sidebrief/releases">Release Notes</a></li>
           </ul>
         </div>
 
@@ -429,26 +495,26 @@ distinct strategic alternatives. Preserve source citations."
             <li><a href="#docs">Quick Start</a></li>
             <li><a href="#docs">Audio Pipeline Spec</a></li>
             <li><a href="#docs">Keychain Security</a></li>
-            <li><a href="#docs">Context Spaces</a></li>
+            <li><a href="#docs">Build from Source</a></li>
           </ul>
         </div>
 
         <div class="footer-col">
-          <h5>Support &amp; Contact</h5>
+          <h5>Community</h5>
           <ul>
-            <li><a href="#support">License Recovery</a></li>
-            <li><a href="mailto:support@tkoresearch.com">support@tkoresearch.com</a></li>
+            <li><a href="https://github.com/KevinOBytes/sidebrief">GitHub Repository</a></li>
+            <li><a href="https://github.com/KevinOBytes/sidebrief/issues">Issue Tracker</a></li>
+            <li><a href="mailto:kevin@tkoresearch.com">kevin@tkoresearch.com</a></li>
             <li><a href="#faq">FAQ</a></li>
-            <li><a href="https://github.com">GitHub Repository</a></li>
           </ul>
         </div>
       </div>
 
       <div class="footer-bottom">
-        <div>© 2026 Sidebrief. All rights reserved. Built for macOS 14.0+ Apple Silicon &amp; Intel.</div>
+        <div>© 2026 Sidebrief. Open Source under Apache 2.0 / MIT. Built for macOS 14.0+ Apple Silicon &amp; Intel.</div>
         <div>
-          <a href="/downloads/Sidebrief.dmg" style="color: var(--accent-light); text-decoration: none; margin-right: 16px;">Download Latest v1.0.1</a>
-          <a href="#pricing" style="color: var(--accent-light); text-decoration: none;">Buy License</a>
+          <a href="/download" style="color: var(--accent-light); text-decoration: none; margin-right: 16px;">Download Latest DMG</a>
+          <a href="https://github.com/KevinOBytes/sidebrief" style="color: var(--accent-light); text-decoration: none;">GitHub</a>
         </div>
       </div>
     </div>
@@ -456,94 +522,21 @@ distinct strategic alternatives. Preserve source citations."
 
   <!-- Client-Side Scripts -->
   <script>
-    // 1. Stripe Checkout Trigger
-    const checkoutBtn = document.getElementById('checkoutBtn');
-    const emailInput = document.getElementById('buyerEmail');
-
-    checkoutBtn.addEventListener('click', async () => {
-      const email = emailInput.value.trim();
-      if (!email || !email.includes('@')) {
-        alert('Please enter a valid email address.');
-        emailInput.focus();
-        return;
-      }
-
-      checkoutBtn.disabled = true;
-      checkoutBtn.textContent = 'Preparing Secure Checkout...';
-
-      try {
-        const response = await fetch('/api/v1/checkout/create-session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email })
-        });
-
-        const data = await response.json();
-        if (data.url) {
-          window.location.href = data.url;
-        } else {
-          alert('Could not initialize checkout: ' + (data.error || 'Unknown error'));
-          checkoutBtn.disabled = false;
-          checkoutBtn.textContent = 'Purchase Lifetime License ($19.99)';
-        }
-      } catch (err) {
-        console.error('Checkout error:', err);
-        alert('Error connecting to checkout server. Please try again.');
-        checkoutBtn.disabled = false;
-        checkoutBtn.textContent = 'Purchase Lifetime License ($19.99)';
-      }
-    });
-
-    // 2. Magic Link / License Recovery
-    async function handleMagicLink(e) {
-      e.preventDefault();
-      const email = document.getElementById('recoveryEmail').value.trim();
-      const status = document.getElementById('recoveryStatus');
-      const btn = document.getElementById('recoveryBtn');
-
-      btn.disabled = true;
-      btn.textContent = 'Searching...';
-      status.style.color = 'var(--text-secondary)';
-      status.textContent = 'Looking up active licenses...';
-
-      try {
-        const res = await fetch('/api/v1/auth/magic-link', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email })
-        });
-        const data = await res.json();
-        status.style.color = 'var(--success)';
-        status.textContent = data.message || 'If an account exists, an email has been sent!';
-      } catch (err) {
-        status.style.color = '#ef4444';
-        status.textContent = 'Network error. Please try again.';
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'Send My License Key';
-      }
+    // 1. Copy Terminal Quick Install Command
+    function copyTerminalCmd() {
+      const cmd = document.getElementById('brewCmd').textContent;
+      navigator.clipboard.writeText(cmd).then(() => {
+        const btn = document.querySelector('.terminal-copy-btn');
+        btn.textContent = 'Copied!';
+        btn.style.color = '#10b981';
+        setTimeout(() => {
+          btn.textContent = 'Copy';
+          btn.style.color = '';
+        }, 2000);
+      });
     }
 
-    // 3. Contact Form Handler
-    function handleContact(e) {
-      e.preventDefault();
-      const name = document.getElementById('contactName').value;
-      const email = document.getElementById('contactEmail').value;
-      const status = document.getElementById('contactStatus');
-      const btn = document.getElementById('contactBtn');
-
-      btn.disabled = true;
-      btn.textContent = 'Sending Message...';
-
-      setTimeout(() => {
-        status.style.color = 'var(--success)';
-        status.textContent = '✓ Thank you, ' + name + '! Your message was sent to support@tkoresearch.com. We will reply shortly.';
-        btn.disabled = false;
-        btn.textContent = 'Message Sent';
-      }, 700);
-    }
-
-    // 4. Docs Tab Switcher
+    // 2. Docs Tab Switcher
     function switchDocTab(index) {
       const tabs = document.querySelectorAll('.docs-tab-btn');
       const panes = document.querySelectorAll('.docs-pane');
@@ -551,7 +544,7 @@ distinct strategic alternatives. Preserve source citations."
       panes.forEach((p, i) => p.classList.toggle('active', i === index));
     }
 
-    // 5. FAQ Accordion Toggle
+    // 3. FAQ Accordion Toggle
     function toggleFaq(button) {
       const item = button.parentElement;
       item.classList.toggle('open');
@@ -559,7 +552,7 @@ distinct strategic alternatives. Preserve source citations."
       sign.textContent = item.classList.contains('open') ? '−' : '+';
     }
 
-    // 6. Progressive Enhancement Parallax Fallback (compliant with modern-web-guidance)
+    // 4. Progressive Enhancement Parallax Fallback
     if (!CSS.supports('(animation-timeline: view()) and (animation-range: entry)')) {
       const orb1 = document.querySelector('.parallax-orb-1');
       const orb2 = document.querySelector('.parallax-orb-2');

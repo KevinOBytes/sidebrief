@@ -156,10 +156,10 @@ public struct SettingsView: View {
                     Label("Retention & Privacy", systemImage: "lock.shield")
                 }
 
-            // License & Registration Tab
-            licenseTab
+            // About & Open Source Tab
+            aboutTab
                 .tabItem {
-                    Label("License", systemImage: "checkmark.seal")
+                    Label("About", systemImage: "info.circle")
                 }
         }
         .frame(width: 680, height: 560)
@@ -1723,64 +1723,89 @@ public struct SettingsView: View {
         }
     }
 
-    // MARK: - License & Registration Tab
+    // MARK: - About & Open Source Tab
 
-    private var licenseTab: some View {
+    private var aboutTab: some View {
         Form {
-            Section("License Status") {
+            Section("Sidebrief") {
                 HStack(spacing: 16) {
-                    Image(systemName: licenseManager.isLicensed ? "checkmark.seal.fill" : "lock.circle.fill")
+                    Image(systemName: "mic.badge.waveform")
                         .font(.system(size: 38))
-                        .foregroundStyle(licenseManager.isLicensed ? Color.green : Color.orange)
+                        .foregroundStyle(Color.accentColor)
 
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Text(licenseManager.isLicensed ? "Lifetime License Active" : "Unregistered / Trial")
+                            Text("Sidebrief for macOS")
                                 .font(.headline)
                             Spacer()
-                            Text(licenseManager.isLicensed ? "ACTIVE" : "UNREGISTERED")
+                            Text("FREE & OPEN SOURCE")
                                 .font(.system(size: 10, weight: .bold))
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background((licenseManager.isLicensed ? Color.green : Color.orange).opacity(0.2))
-                                .foregroundColor(licenseManager.isLicensed ? .green : .orange)
+                                .background(Color.green.opacity(0.2))
+                                .foregroundColor(.green)
                                 .cornerRadius(4)
                         }
 
-                        if licenseManager.isLicensed {
-                            if !licenseManager.licenseeEmail.isEmpty {
-                                Text("Licensed to: \(licenseManager.licenseeEmail)")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                            }
-                            Text("Key: \(licenseManager.maskedKey)")
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundColor(.secondary)
-                        } else {
-                            Text("A lifetime license is a 1-time $19.99 purchase that gives you unlimited access to frontier models and future updates.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
+                        Text("Version 1.0.2 • Open Source")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+
+                        Text("Native macOS meeting copilot with dual-audio ScreenCaptureKit loopback, live VAD transcription, and frontier LLM guidance.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
                 .padding(.vertical, 6)
             }
 
-            if !licenseManager.isLicensed {
-                Section("Activate License") {
-                    TextField("Enter License Key (e.g. SB-XXXX-XXXX-XXXX-XXXX)", text: $inputLicenseKey)
-                        .textFieldStyle(.roundedBorder)
+            Section("Links & Resources") {
+                HStack {
+                    Label("Official Website", systemImage: "globe")
+                    Spacer()
+                    Link("sidebrief.tkoresearch.com", destination: URL(string: "https://sidebrief.tkoresearch.com")!)
+                }
+                HStack {
+                    Label("GitHub Repository", systemImage: "chevron.left.forwardslash.chevron.right")
+                    Spacer()
+                    Link("github.com/KevinOBytes/sidebrief", destination: URL(string: "https://github.com/KevinOBytes/sidebrief")!)
+                }
+                HStack {
+                    Label("Releases & Downloads", systemImage: "arrow.down.circle")
+                    Spacer()
+                    Link("Latest DMG Releases", destination: URL(string: "https://github.com/KevinOBytes/sidebrief/releases")!)
+                }
+            }
 
-                    TextField("Account Email (optional)", text: $inputLicenseEmail)
+            Section("System & Hardware") {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Machine Hardware UUID")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(licenseManager.hardwareUUID)
+                            .font(.system(.caption2, design: .monospaced))
+                    }
+                    Spacer()
+                }
+            }
+
+            Section("Optional Sponsor / License Key") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Sidebrief is 100% free and open source. If your organization uses managed sponsor keys or backend licensing, enter your key below:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    TextField("License / Sponsor Key (Optional)", text: $inputLicenseKey)
                         .textFieldStyle(.roundedBorder)
 
                     HStack {
-                        Button("Activate License") {
+                        Button("Verify Key") {
                             Task {
                                 _ = await licenseManager.activate(key: inputLicenseKey, email: inputLicenseEmail.isEmpty ? nil : inputLicenseEmail)
                             }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.bordered)
                         .disabled(inputLicenseKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || licenseManager.isValidating)
 
                         if licenseManager.isValidating {
@@ -1789,12 +1814,15 @@ public struct SettingsView: View {
                                 .padding(.leading, 8)
                         }
 
-                        Spacer()
-
-                        Button("Buy Lifetime License ($19.99)") {
-                            NSWorkspace.shared.open(resolveStoreUrl())
+                        if licenseManager.isLicensed {
+                            Spacer()
+                            Button("Clear Key") {
+                                licenseManager.deactivate()
+                                inputLicenseKey = ""
+                            }
+                            .buttonStyle(.bordered)
+                            .foregroundColor(.red)
                         }
-                        .buttonStyle(.bordered)
                     }
 
                     if let msg = licenseManager.statusMessage {
@@ -1803,43 +1831,7 @@ public struct SettingsView: View {
                             .foregroundColor(licenseManager.isLicensed ? .green : .secondary)
                     }
                 }
-            } else {
-                Section("Manage License") {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Machine Hardware UUID")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(licenseManager.hardwareUUID)
-                                .font(.system(.caption2, design: .monospaced))
-                        }
-                        Spacer()
-                        Button("Deactivate") {
-                            licenseManager.deactivate()
-                        }
-                        .buttonStyle(.bordered)
-                        .foregroundColor(.red)
-                    }
-                }
-            }
-
-            Section("Need a License?") {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Sidebrief is available for a one-time purchase of $19.99 via Stripe. No subscriptions or hidden fees. Valid for up to 3 personal Macs.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Button("Open Sidebrief Store...") {
-                        NSWorkspace.shared.open(resolveStoreUrl())
-                    }
-                    .buttonStyle(.link)
-                }
             }
         }
-    }
-
-    private func resolveStoreUrl() -> URL {
-        let base = UserDefaults.standard.string(forKey: "backend_api_url") ?? "http://localhost:3100"
-        return URL(string: "\(base)/#pricing") ?? URL(string: "http://localhost:3100/#pricing")!
     }
 }
