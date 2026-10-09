@@ -4,7 +4,7 @@ import AVFoundation
 
 /// High-performance native macOS speech-to-text adapter using Apple's Speech framework (SFSpeechRecognizer).
 /// Operates on-device and via Apple Speech Engine with zero external API keys and zero network cost.
-/// Uses a unified recognition engine across audio tracks to comply with macOS's single-task speech daemon invariant.
+/// Uses an Active Channel VAD Router & Synchronous Mixer to eliminate dual-track audio interleaving and time dilation.
 public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServiceProtocol, @unchecked Sendable {
     private let (stream, continuation) = AsyncStream.makeStream(of: TranscriptionEvent.self)
     public var eventStream: AsyncStream<TranscriptionEvent> { stream }
@@ -28,6 +28,14 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
     private var isClosing: Bool = false
     private var silenceTimer: Task<Void, Never>?
 
+    // VAD & Active Channel Tracking
+    private let vadThreshold: Double = 220.0
+    private var lastMicSpeechDate: Date = Date.distantPast
+    private var lastSysSpeechDate: Date = Date.distantPast
+    private var lastRoutedTrackType: AudioSourceType = .microphone
+    private var lastSilenceAppendDate: Date = Date.distantPast
+    public var contextualStrings: [String] = []
+
     // Energy tracking for speaker attribution
     private var micEnergyAccumulator: Double = 0
     private var sysEnergyAccumulator: Double = 0
@@ -46,6 +54,12 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
             interleaved: true
         ) ?? AVAudioFormat(standardFormatWithSampleRate: 48000.0, channels: 1)!
         super.init()
+    }
+
+    public func setCustomVocabulary(_ words: [String]) {
+        queue.sync {
+            self.contextualStrings = words
+        }
     }
 
     // MARK: - Lifecycle
@@ -96,36 +110,102 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
     public func sendAudioChunk(trackId: String, pcmData: Data, sampleCount: Int, offsetMs: Int64) async throws {
         guard sampleCount > 0, !pcmData.isEmpty else { return }
 
-        // Compute signal energy for track attribution
-        var chunkEnergy: Double = 0
+        // Compute RMS signal energy for accurate VAD gating
+        var sumSquares: Double = 0
         pcmData.withUnsafeBytes { rawPtr in
             if let base = rawPtr.baseAddress?.assumingMemoryBound(to: Int16.self) {
                 for i in 0..<sampleCount {
-                    chunkEnergy += abs(Double(base[i]))
+                    let s = Double(base[i])
+                    sumSquares += s * s
                 }
             }
         }
+        let chunkRMS = sqrt(sumSquares / Double(sampleCount))
 
         queue.sync {
             guard !isClosing else { return }
             latestOffsetMs = offsetMs
 
-            if let track = registeredTracks[trackId], track.sourceType == .microphone {
-                micEnergyAccumulator += chunkEnergy
+            let track = registeredTracks[trackId]
+            let isMic = (track?.sourceType == .microphone)
+            let hasSpeech = (chunkRMS >= vadThreshold)
+
+            if hasSpeech {
+                if isMic {
+                    lastMicSpeechDate = Date()
+                    micEnergyAccumulator += chunkRMS * Double(sampleCount)
+                } else {
+                    lastSysSpeechDate = Date()
+                    sysEnergyAccumulator += chunkRMS * Double(sampleCount)
+                }
+            }
+
+            // Evaluate active speech with 350ms hangover to preserve natural inter-word micro-pauses
+            let now = Date()
+            let micActive = (now.timeIntervalSince(lastMicSpeechDate) < 0.35)
+            let sysActive = (now.timeIntervalSince(lastSysSpeechDate) < 0.35)
+
+            // Active Channel Selection & Decision:
+            // Prevents parallel track serialization (which diced audio into 42ms slices and doubled time)
+            let shouldAppendChunk: Bool
+            let targetTrackType: AudioSourceType
+
+            if micActive && !sysActive {
+                // Local microphone speech exclusively: drop system silence
+                shouldAppendChunk = isMic
+                targetTrackType = .microphone
+            } else if sysActive && !micActive {
+                // Remote participant speech exclusively: drop mic room noise
+                shouldAppendChunk = !isMic
+                targetTrackType = .systemAudio
+            } else if micActive && sysActive {
+                // Crosstalk: accept chunk from the dominant speaking channel
+                let dominantIsMic = (micEnergyAccumulator >= sysEnergyAccumulator)
+                shouldAppendChunk = (isMic == dominantIsMic)
+                targetTrackType = dominantIsMic ? .microphone : .systemAudio
             } else {
-                sysEnergyAccumulator += chunkEnergy
+                // Silence on both channels: throttle silence buffers to at most one buffer per 100ms
+                // This keeps Apple Speech clock advancing in 1x real-time without 2x time dilation
+                targetTrackType = lastRoutedTrackType
+                if now.timeIntervalSince(lastSilenceAppendDate) >= 0.10 {
+                    lastSilenceAppendDate = now
+                    shouldAppendChunk = isMic // Pick one arbitrary channel to deliver real-time silence
+                } else {
+                    shouldAppendChunk = false
+                }
+            }
+
+            guard shouldAppendChunk else { return }
+
+            // Conversational Turn Transition Detection:
+            // If the active speaking channel switched (e.g. You finished asking a question and Remote Speaker begins answering),
+            // commit the prior utterance immediately to pass the prompt to the AI copilot without waiting for timeouts!
+            if targetTrackType != lastRoutedTrackType && !lastEmittedText.isEmpty {
+                self.commitAndRollover_locked()
+            }
+            lastRoutedTrackType = targetTrackType
+
+            // Update speaker attribution
+            let micTrack = registeredTracks.values.first { $0.sourceType == .microphone }
+            let sysTrack = registeredTracks.values.first { $0.sourceType == .systemAudio }
+            if targetTrackType == .microphone {
+                lastAttributedSpeaker = "You"
+                lastAttributedTrackId = micTrack?.id ?? trackId
+            } else {
+                lastAttributedSpeaker = "Remote Speaker"
+                lastAttributedTrackId = sysTrack?.id ?? trackId
             }
 
             // Apple SFSpeechRecognitionTask max recommended duration is ~45-60 seconds.
-            // If the current task has been running > 45 seconds with active text, roll over into a fresh task smoothly.
-            let taskAge = Date().timeIntervalSince(taskStartTime)
+            // If the current task has been running > 45 seconds with active text, roll over smoothly.
+            let taskAge = now.timeIntervalSince(taskStartTime)
             if taskAge > 45.0 && !lastEmittedText.isEmpty {
                 self.commitAndRollover_locked()
             }
 
             // Lazily spawn recognition task when audio arrives, with backoff throttle to prevent loops
             if currentRequest == nil {
-                let timeSinceError = Date().timeIntervalSince(lastErrorTime)
+                let timeSinceError = now.timeIntervalSince(lastErrorTime)
                 if timeSinceError >= 0.20 {
                     self.spawnRecognitionTask_locked()
                 }
@@ -166,7 +246,7 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
             // If there was any trailing uncommitted text, commit it now
             let text = lastEmittedText.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty {
-                let isMicDominant = (micEnergyAccumulator >= sysEnergyAccumulator)
+                let isMicDominant = (lastRoutedTrackType == .microphone)
                 let micTrack = registeredTracks.values.first { $0.sourceType == .microphone }
                 let sysTrack = registeredTracks.values.first { $0.sourceType == .systemAudio }
                 let speaker = isMicDominant ? "You" : "Remote Speaker"
@@ -201,13 +281,16 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
-        request.taskHint = .dictation
+        request.taskHint = .unspecified
 
-        // Allow on-device recognition if available, with graceful network fallback
-        if #available(macOS 10.15, *) {
-            if rec.supportsOnDeviceRecognition {
-                request.requiresOnDeviceRecognition = false
-            }
+        // Prioritize on-device Apple Neural Engine recognition to eliminate server latency & timeouts
+        if #available(macOS 10.15, *), rec.supportsOnDeviceRecognition {
+            request.requiresOnDeviceRecognition = true
+        }
+
+        // Inject custom vocabulary if provided
+        if !contextualStrings.isEmpty {
+            request.contextualStrings = contextualStrings
         }
 
         let taskId = UUID()
@@ -229,7 +312,7 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
 
         let text = lastEmittedText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty {
-            let isMicDominant = (micEnergyAccumulator >= sysEnergyAccumulator)
+            let isMicDominant = (lastRoutedTrackType == .microphone)
             let micTrack = registeredTracks.values.first { $0.sourceType == .microphone }
             let sysTrack = registeredTracks.values.first { $0.sourceType == .systemAudio }
             let speaker = isMicDominant ? "You" : "Remote Speaker"
@@ -280,14 +363,8 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
                 guard !transcription.isEmpty else { return }
 
                 lastEmittedText = transcription
-                let isMicDominant = (micEnergyAccumulator >= sysEnergyAccumulator)
-                let micTrack = registeredTracks.values.first { $0.sourceType == .microphone }
-                let sysTrack = registeredTracks.values.first { $0.sourceType == .systemAudio }
-                let speaker = isMicDominant ? "You" : "Remote Speaker"
-                let targetTrackId = isMicDominant ? (micTrack?.id ?? lastAttributedTrackId) : (sysTrack?.id ?? lastAttributedTrackId)
-                let resolvedTrackId = targetTrackId.isEmpty ? (registeredTracks.keys.first ?? "audio") : targetTrackId
-                lastAttributedSpeaker = speaker
-                lastAttributedTrackId = resolvedTrackId
+                let speaker = lastAttributedSpeaker
+                let resolvedTrackId = lastAttributedTrackId
 
                 if result.isFinal {
                     silenceTimer?.cancel()

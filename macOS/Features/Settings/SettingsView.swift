@@ -361,7 +361,7 @@ public struct SettingsView: View {
                             Text("Built-in macOS On-Device Speech Recognition")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
-                            Text("Operates locally on your Mac with zero network cost, zero API keys, and maximum privacy. Transcribes both physical microphone and remote participant voices.")
+                            Text("Active Channel VAD Router runs on Apple Neural Engine (ANE). Zero API keys, zero network latency, with clean turn-taking and crosstalk mixing.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -404,19 +404,19 @@ public struct SettingsView: View {
                         .foregroundColor(.secondary)
                 } else if selectedSTTProvider == "whisper" {
                     SecureField("OpenAI / Groq API Key", text: $openaiApiKey)
-                        .help("Used for Whisper audio transcriptions")
+                        .help("Used for Whisper audio transcriptions (OpenAI sk-... or Groq gsk_...)")
 
                     HStack {
-                        Text("Model:")
+                        Text("Engine:")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         Spacer()
-                        Text("Whisper Cloud STT (whisper-1 / whisper-large-v3)")
+                        Text(openaiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("gsk_") ? "Groq Whisper (whisper-large-v3-turbo • ~150ms)" : "OpenAI Whisper (whisper-1)")
                             .font(.caption)
                             .fontWeight(.medium)
                     }
 
-                    Text("Transcribes conversational speech chunks via OpenAI Whisper or Groq Whisper with high accuracy.")
+                    Text("Auto-detects Groq API keys (gsk_...) for ultra-fast ~150ms Whisper Large v3 Turbo, or standard OpenAI Whisper keys.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }

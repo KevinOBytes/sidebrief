@@ -253,20 +253,32 @@ public final class AppCoordinator: ObservableObject {
             if !elKey.isEmpty {
                 return ElevenLabsStreamingSTTAdapter(apiKey: elKey)
             } else {
-                return AppleSpeechTranscriptionAdapter()
+                let adapter = AppleSpeechTranscriptionAdapter()
+                let vocab = store.getVocabulary(spaceId: activeSpace.id).map { $0.phrase }
+                let speakers = store.getSpeakerProfiles(spaceId: activeSpace.id).map { $0.name }
+                adapter.setCustomVocabulary(vocab + speakers)
+                return adapter
             }
         case "whisper":
             if !openaiKey.isEmpty {
                 return WhisperTranscriptionAdapter(apiKey: openaiKey)
             } else {
-                return AppleSpeechTranscriptionAdapter()
+                let adapter = AppleSpeechTranscriptionAdapter()
+                let vocab = store.getVocabulary(spaceId: activeSpace.id).map { $0.phrase }
+                let speakers = store.getSpeakerProfiles(spaceId: activeSpace.id).map { $0.name }
+                adapter.setCustomVocabulary(vocab + speakers)
+                return adapter
             }
         case "mock":
             return MockTranscriptionService()
         case "apple_speech":
             fallthrough
         default:
-            return AppleSpeechTranscriptionAdapter()
+            let adapter = AppleSpeechTranscriptionAdapter()
+            let vocab = store.getVocabulary(spaceId: activeSpace.id).map { $0.phrase }
+            let speakers = store.getSpeakerProfiles(spaceId: activeSpace.id).map { $0.name }
+            adapter.setCustomVocabulary(vocab + speakers)
+            return adapter
         }
     }
 
@@ -286,6 +298,10 @@ public final class AppCoordinator: ObservableObject {
 
         if captureState == .idle {
             self.sttService = createConfiguredSTTService()
+        } else if let appleSTT = sttService as? AppleSpeechTranscriptionAdapter {
+            let vocabStrings = vocab.map { $0.phrase }
+            let speakerStrings = speakerProfiles.map { $0.name }
+            appleSTT.setCustomVocabulary(vocabStrings + speakerStrings)
         }
     }
 
@@ -326,6 +342,12 @@ public final class AppCoordinator: ObservableObject {
         coordinator.delegate = self
         self.assistanceCoordinator = coordinator
         updateAssistantExcerpts()
+
+        if let appleSTT = sttService as? AppleSpeechTranscriptionAdapter {
+            let vocabStrings = vocab.map { $0.phrase }
+            let speakerStrings = speakerProfiles.map { $0.name }
+            appleSTT.setCustomVocabulary(vocabStrings + speakerStrings)
+        }
 
         // Setup Strict FIFO STT Queues to guarantee in-order delivery
         micAudioWorkerTask?.cancel()
