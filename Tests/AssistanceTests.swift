@@ -864,6 +864,26 @@ struct AssistanceTests {
         #expect(card != nil)
         #expect(card?.primaryResponse.text.contains("pricing") == true || card?.detectedTopicOrQuestion.contains("Partner") == true)
     }
+
+    @Test("Whisper Transcription Adapter Auto-Detects Groq API Key and Model")
+    func testWhisperAdapterGroqAutoDetection() {
+        let groqAdapter = WhisperTranscriptionAdapter(apiKey: "gsk_live_test_123456789")
+        #expect(groqAdapter.endpoint == "https://api.groq.com/openai/v1/audio/transcriptions")
+        #expect(groqAdapter.model == "whisper-large-v3-turbo")
+
+        let openAIAdapter = WhisperTranscriptionAdapter(apiKey: "sk-proj-test123")
+        #expect(openAIAdapter.endpoint == "https://api.openai.com/v1/audio/transcriptions")
+        #expect(openAIAdapter.model == "whisper-1")
+    }
+
+    @Test("Apple Speech Transcription Adapter Contextual Vocabulary and Custom Words")
+    func testAppleSpeechContextualVocabulary() {
+        let adapter = AppleSpeechTranscriptionAdapter(locale: Locale(identifier: "en-US"))
+        adapter.setCustomVocabulary(["Kubernetes", "PostgreSQL", "EBITDA", "Sidebrief"])
+        #expect(adapter.contextualStrings.contains("Kubernetes"))
+        #expect(adapter.contextualStrings.contains("Sidebrief"))
+        #expect(adapter.contextualStrings.count == 4)
+    }
 }
 
 

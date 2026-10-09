@@ -3,8 +3,8 @@ import Foundation
 /// Fast Whisper cloud transcription adapter supporting OpenAI Whisper (`whisper-1`) and Groq Whisper (`whisper-large-v3`).
 public final class WhisperTranscriptionAdapter: TranscriptionServiceProtocol, @unchecked Sendable {
     private let apiKey: String
-    private let endpoint: String
-    private let model: String
+    public let endpoint: String
+    public let model: String
     private let session = URLSession(configuration: .default)
 
     private let (stream, continuation) = AsyncStream.makeStream(of: TranscriptionEvent.self)
@@ -25,12 +25,22 @@ public final class WhisperTranscriptionAdapter: TranscriptionServiceProtocol, @u
 
     public init(
         apiKey: String,
-        endpoint: String = "https://api.openai.com/v1/audio/transcriptions",
-        model: String = "whisper-1"
+        endpoint: String? = nil,
+        model: String? = nil
     ) {
-        self.apiKey = apiKey
-        self.endpoint = endpoint
-        self.model = model
+        let cleanKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.apiKey = cleanKey
+        if let customEndpoint = endpoint, !customEndpoint.isEmpty {
+            self.endpoint = customEndpoint
+            self.model = model ?? (cleanKey.hasPrefix("gsk_") ? "whisper-large-v3-turbo" : "whisper-1")
+        } else if cleanKey.hasPrefix("gsk_") {
+            // Auto-detect Groq Whisper: 150ms latency, high accuracy, free tier
+            self.endpoint = "https://api.groq.com/openai/v1/audio/transcriptions"
+            self.model = model ?? "whisper-large-v3-turbo"
+        } else {
+            self.endpoint = "https://api.openai.com/v1/audio/transcriptions"
+            self.model = model ?? "whisper-1"
+        }
     }
 
     public func startSession(meetingId: String, track: AudioTrack) async throws {
@@ -59,8 +69,9 @@ public final class WhisperTranscriptionAdapter: TranscriptionServiceProtocol, @u
             state.sampleCountAccumulated += sampleCount
             state.latestOffsetMs = offsetMs
 
-            // Buffer ~3 seconds of 48kHz audio (48,000 samples/sec * 3 = 144,000 samples)
-            let thresholdSamples = Int(state.track.sampleRate * 3.0)
+            // Buffer 2.0s for Groq (sub-200ms inference) or 3.0s for standard OpenAI Whisper
+            let secondsThreshold = self.endpoint.contains("groq.com") ? 2.0 : 3.0
+            let thresholdSamples = Int(state.track.sampleRate * secondsThreshold)
             if state.sampleCountAccumulated >= thresholdSamples && !state.isProcessing {
                 state.isProcessing = true
                 let chunkData = state.pcmBuffer
@@ -141,7 +152,10 @@ public final class WhisperTranscriptionAdapter: TranscriptionServiceProtocol, @u
 
         do {
             let (data, response) = try await session.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            guard let httpResponse = response as? HTTPURLResponse else { return }
+            guard (200...299).contains(httpResponse.statusCode) else {
+                let errBody = String(data: data, encoding: .utf8) ?? "HTTP \(httpResponse.statusCode)"
+                continuation.yield(.error(trackId: track.id, message: "Whisper STT error (\(httpResponse.statusCode)): \(errBody)"))
                 return
             }
 
