@@ -22,6 +22,7 @@ public struct MeetingDetailView: View {
     @State private var renamingSpeaker: String? = nil
     @State private var newSpeakerName: String = ""
     @State private var saveToSpeakerDirectory: Bool = true
+    @State private var isShowingBatchSpeakerRename: Bool = false
     @ObservedObject private var syncEngine = SyncEngine.shared
     public var availableSpaces: [ContextSpace] = []
 
@@ -90,6 +91,22 @@ public struct MeetingDetailView: View {
                 }
                 .padding(20)
             }
+        }
+        .sheet(isPresented: $isShowingBatchSpeakerRename) {
+            BatchSpeakerRenameSheet(
+                meetingId: meeting.id,
+                spaceId: meeting.spaceId,
+                onDismiss: { isShowingBatchSpeakerRename = false },
+                onApply: { renames in
+                    for (oldLabel, newLabel) in renames {
+                        for i in 0..<transcriptSegments.count {
+                            if transcriptSegments[i].speakerLabel == oldLabel {
+                                transcriptSegments[i].speakerLabel = newLabel
+                            }
+                        }
+                    }
+                }
+            )
         }
     }
 
@@ -320,27 +337,39 @@ public struct MeetingDetailView: View {
 
     private var transcriptTabView: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Search Bar for Transcript
+            // Search Bar & Manage Speakers for Transcript
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-                    .font(.system(size: 11))
-                TextField("Search within transcript...", text: $transcriptSearchText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12))
-                if !transcriptSearchText.isEmpty {
-                    Button(action: { transcriptSearchText = "" }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                            .font(.system(size: 11))
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                        .font(.system(size: 11))
+                    TextField("Search within transcript...", text: $transcriptSearchText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                    if !transcriptSearchText.isEmpty {
+                        Button(action: { transcriptSearchText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                                .font(.system(size: 11))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Color.primary.opacity(0.04))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                Button(action: { isShowingBatchSpeakerRename = true }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.2.waveform.badge.magnifyingglass")
+                        Text("Manage Speakers")
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+                .help("Review speaker voices, listen to audio samples, and batch rename")
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(Color.primary.opacity(0.04))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
 
             if !transcriptSearchText.isEmpty {
                 Text("Showing \(filteredTranscriptSegments.count) of \(transcriptSegments.count) segments")

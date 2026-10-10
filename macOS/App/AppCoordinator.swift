@@ -295,6 +295,7 @@ public final class AppCoordinator: ObservableObject {
         assistanceCoordinator?.setCustomVocabulary(vocab)
         let speakerProfiles = store.getSpeakerProfiles(spaceId: activeSpace.id)
         assistanceCoordinator?.setSpeakerProfiles(speakerProfiles)
+        SpeakerDiarizationService.shared.refreshKnownProfiles(spaceId: activeSpace.id)
 
         if captureState == .idle {
             self.sttService = createConfiguredSTTService()

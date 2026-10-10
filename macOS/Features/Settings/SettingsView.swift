@@ -1,5 +1,6 @@
 import SwiftUI
 import ServiceManagement
+import AVFoundation
 
 public struct SettingsView: View {
     // User Profile
@@ -73,6 +74,8 @@ public struct SettingsView: View {
     @State private var newSpeakerOrg: String = ""
     @State private var newSpeakerNotes: String = ""
     @State private var newSpeakerAliases: String = ""
+    @State private var playingSpeakerProfileId: String? = nil
+    @State private var settingsAudioPlayer: AVAudioPlayer? = nil
 
     // Multi-Email State
     @State private var emailAccounts: [EmailAccountConfig] = []
@@ -1057,6 +1060,20 @@ public struct SettingsView: View {
                                                 .font(.caption)
                                                 .foregroundColor(.secondary)
                                         }
+
+                                        if let vp = profile.voiceprint {
+                                            HStack(spacing: 3) {
+                                                Image(systemName: "waveform")
+                                                    .font(.system(size: 8))
+                                                Text(vp.summaryBadge)
+                                                    .font(.system(size: 9, weight: .bold))
+                                            }
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.green.opacity(0.15))
+                                            .foregroundColor(.green)
+                                            .cornerRadius(4)
+                                        }
                                     }
 
                                     if let notes = profile.notesOrContext, !notes.isEmpty {
@@ -1073,6 +1090,25 @@ public struct SettingsView: View {
                                 }
 
                                 Spacer()
+
+                                if profile.voiceSampleWavData != nil {
+                                    Button(action: {
+                                        toggleProfilePlayback(profile)
+                                    }) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: playingSpeakerProfileId == profile.id ? "stop.fill" : "play.fill")
+                                                .font(.system(size: 9))
+                                            Text(playingSpeakerProfileId == profile.id ? "Stop" : "Sample")
+                                                .font(.system(size: 11, weight: .medium))
+                                        }
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(playingSpeakerProfileId == profile.id ? Color.red.opacity(0.15) : Color.accentColor.opacity(0.12))
+                                        .foregroundColor(playingSpeakerProfileId == profile.id ? .red : .accentColor)
+                                        .cornerRadius(6)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
 
                                 Button(role: .destructive) {
                                     LocalDatabaseStore.shared.deleteSpeakerProfile(id: profile.id)
@@ -1158,6 +1194,29 @@ public struct SettingsView: View {
 
     private func loadSpeakers() {
         self.speakerProfiles = LocalDatabaseStore.shared.getSpeakerProfiles(spaceId: selectedConfigSpaceId)
+    }
+
+    private func toggleProfilePlayback(_ profile: SpeakerProfile) {
+        if playingSpeakerProfileId == profile.id {
+            settingsAudioPlayer?.stop()
+            playingSpeakerProfileId = nil
+            return
+        }
+        guard let wavData = profile.voiceSampleWavData else { return }
+        settingsAudioPlayer?.stop()
+        do {
+            settingsAudioPlayer = try AVAudioPlayer(data: wavData)
+            settingsAudioPlayer?.play()
+            playingSpeakerProfileId = profile.id
+            let duration = settingsAudioPlayer?.duration ?? 2.5
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.1) {
+                if self.playingSpeakerProfileId == profile.id {
+                    self.playingSpeakerProfileId = nil
+                }
+            }
+        } catch {
+            print("Failed to play speaker sample: \(error)")
+        }
     }
 
     // MARK: - Connected Sources Tab

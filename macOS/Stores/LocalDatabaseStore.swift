@@ -1,6 +1,8 @@
 import Foundation
 import SQLite3
 
+private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
 public final class LocalDatabaseStore: @unchecked Sendable {
     public static let shared = LocalDatabaseStore()
 
@@ -155,6 +157,9 @@ public final class LocalDatabaseStore: @unchecked Sendable {
             organization TEXT,
             notes_or_context TEXT,
             aliases TEXT,
+            voiceprint_json TEXT,
+            voice_sample_blob BLOB,
+            gender_estimate TEXT,
             created_at REAL,
             updated_at REAL
         );
@@ -167,6 +172,9 @@ public final class LocalDatabaseStore: @unchecked Sendable {
             sqlite3_exec(db, "ALTER TABLE local_meetings ADD COLUMN total_prompt_tokens INTEGER DEFAULT 0;", nil, nil, nil)
             sqlite3_exec(db, "ALTER TABLE local_meetings ADD COLUMN total_completion_tokens INTEGER DEFAULT 0;", nil, nil, nil)
             sqlite3_exec(db, "ALTER TABLE local_meetings ADD COLUMN estimated_cost_usd REAL DEFAULT 0.0;", nil, nil, nil)
+            sqlite3_exec(db, "ALTER TABLE local_speaker_profiles ADD COLUMN voiceprint_json TEXT;", nil, nil, nil)
+            sqlite3_exec(db, "ALTER TABLE local_speaker_profiles ADD COLUMN voice_sample_blob BLOB;", nil, nil, nil)
+            sqlite3_exec(db, "ALTER TABLE local_speaker_profiles ADD COLUMN gender_estimate TEXT;", nil, nil, nil)
             sqlite3_exec(db, "DELETE FROM local_speaker_profiles WHERE rowid NOT IN (SELECT min(rowid) FROM local_speaker_profiles GROUP BY name);", nil, nil, nil)
         }
         seedDefaultVocabularyIfNeeded()
@@ -485,6 +493,29 @@ public final class LocalDatabaseStore: @unchecked Sendable {
                 sqlite3_step(stmt)
             }
             sqlite3_finalize(stmt)
+        }
+    }
+
+    public func getUniqueSpeakersInMeeting(meetingId: String) -> [String] {
+        let sql = """
+        SELECT DISTINCT speaker_label
+        FROM local_transcript_segments
+        WHERE meeting_id = ? AND speaker_label IS NOT NULL AND speaker_label != ''
+        ORDER BY speaker_label ASC;
+        """
+        return queue.sync {
+            var labels: [String] = []
+            var stmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+                sqlite3_bind_text(stmt, 1, (meetingId as NSString).utf8String, -1, nil)
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    if let cStr = sqlite3_column_text(stmt, 0) {
+                        labels.append(String(cString: cStr))
+                    }
+                }
+            }
+            sqlite3_finalize(stmt)
+            return labels
         }
     }
 
@@ -1106,7 +1137,7 @@ public final class LocalDatabaseStore: @unchecked Sendable {
     }
 
     public func getSpeakerProfiles(spaceId: String? = nil) -> [SpeakerProfile] {
-        var sql = "SELECT id, space_id, name, role_or_title, organization, notes_or_context, aliases, created_at, updated_at FROM local_speaker_profiles"
+        var sql = "SELECT id, space_id, name, role_or_title, organization, notes_or_context, aliases, created_at, updated_at, voiceprint_json, voice_sample_blob, gender_estimate FROM local_speaker_profiles"
         if let sp = spaceId, !sp.isEmpty {
             sql += " WHERE space_id IS NULL OR space_id = ?"
         }
@@ -1134,6 +1165,22 @@ public final class LocalDatabaseStore: @unchecked Sendable {
                     let createdAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 7))
                     let updatedAt = Date(timeIntervalSince1970: sqlite3_column_double(stmt, 8))
 
+                    var voiceprint: Voiceprint? = nil
+                    if let rawVp = sqlite3_column_text(stmt, 9) {
+                        let jsonStr = String(cString: rawVp)
+                        voiceprint = try? JSONDecoder().decode(Voiceprint.self, from: Data(jsonStr.utf8))
+                    }
+
+                    var voiceSampleWavData: Data? = nil
+                    if let blobPtr = sqlite3_column_blob(stmt, 10) {
+                        let bytes = sqlite3_column_bytes(stmt, 10)
+                        if bytes > 0 {
+                            voiceSampleWavData = Data(bytes: blobPtr, count: Int(bytes))
+                        }
+                    }
+
+                    let genderEstimate = sqlite3_column_text(stmt, 11).map { String(cString: $0) }
+
                     profiles.append(SpeakerProfile(
                         id: id,
                         spaceId: spId,
@@ -1142,6 +1189,9 @@ public final class LocalDatabaseStore: @unchecked Sendable {
                         organization: org,
                         notesOrContext: notes,
                         aliases: aliases,
+                        voiceprint: voiceprint,
+                        genderEstimate: genderEstimate,
+                        voiceSampleWavData: voiceSampleWavData,
                         createdAt: createdAt,
                         updatedAt: updatedAt
                     ))
@@ -1154,8 +1204,8 @@ public final class LocalDatabaseStore: @unchecked Sendable {
 
     public func saveSpeakerProfile(_ profile: SpeakerProfile) {
         let sql = """
-        INSERT INTO local_speaker_profiles (id, space_id, name, role_or_title, organization, notes_or_context, aliases, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO local_speaker_profiles (id, space_id, name, role_or_title, organization, notes_or_context, aliases, created_at, updated_at, voiceprint_json, voice_sample_blob, gender_estimate)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             space_id = excluded.space_id,
             name = excluded.name,
@@ -1163,10 +1213,20 @@ public final class LocalDatabaseStore: @unchecked Sendable {
             organization = excluded.organization,
             notes_or_context = excluded.notes_or_context,
             aliases = excluded.aliases,
-            updated_at = excluded.updated_at;
+            updated_at = excluded.updated_at,
+            voiceprint_json = excluded.voiceprint_json,
+            voice_sample_blob = excluded.voice_sample_blob,
+            gender_estimate = excluded.gender_estimate;
         """
         let aliasesData = (try? JSONEncoder().encode(profile.aliases)) ?? Data()
         let aliasesJson = String(data: aliasesData, encoding: .utf8) ?? "[]"
+
+        let voiceprintJson: String?
+        if let vp = profile.voiceprint, let vpData = try? JSONEncoder().encode(vp) {
+            voiceprintJson = String(data: vpData, encoding: .utf8)
+        } else {
+            voiceprintJson = nil
+        }
 
         queue.sync {
             var stmt: OpaquePointer?
@@ -1196,9 +1256,52 @@ public final class LocalDatabaseStore: @unchecked Sendable {
                 sqlite3_bind_text(stmt, 7, (aliasesJson as NSString).utf8String, -1, nil)
                 sqlite3_bind_double(stmt, 8, profile.createdAt.timeIntervalSince1970)
                 sqlite3_bind_double(stmt, 9, profile.updatedAt.timeIntervalSince1970)
+
+                if let vpStr = voiceprintJson {
+                    sqlite3_bind_text(stmt, 10, (vpStr as NSString).utf8String, -1, nil)
+                } else {
+                    sqlite3_bind_null(stmt, 10)
+                }
+
+                if let wav = profile.voiceSampleWavData, !wav.isEmpty {
+                    _ = wav.withUnsafeBytes { rawPtr in
+                        sqlite3_bind_blob(stmt, 11, rawPtr.baseAddress, Int32(wav.count), SQLITE_TRANSIENT)
+                    }
+                } else {
+                    sqlite3_bind_null(stmt, 11)
+                }
+
+                if let g = profile.genderEstimate {
+                    sqlite3_bind_text(stmt, 12, (g as NSString).utf8String, -1, nil)
+                } else {
+                    sqlite3_bind_null(stmt, 12)
+                }
+
                 sqlite3_step(stmt)
             }
             sqlite3_finalize(stmt)
+        }
+    }
+
+    public func batchRenameSpeakersInTranscript(meetingId: String, renames: [String: String]) {
+        queue.sync {
+            let sql = """
+            UPDATE local_transcript_segments
+            SET speaker_label = ?, revision = revision + 1
+            WHERE meeting_id = ? AND speaker_label = ?;
+            """
+            for (oldLabel, newLabel) in renames {
+                let trimmedNew = newLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard oldLabel != trimmedNew, !trimmedNew.isEmpty else { continue }
+                var stmt: OpaquePointer?
+                if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+                    sqlite3_bind_text(stmt, 1, (trimmedNew as NSString).utf8String, -1, nil)
+                    sqlite3_bind_text(stmt, 2, (meetingId as NSString).utf8String, -1, nil)
+                    sqlite3_bind_text(stmt, 3, (oldLabel as NSString).utf8String, -1, nil)
+                    sqlite3_step(stmt)
+                }
+                sqlite3_finalize(stmt)
+            }
         }
     }
 
