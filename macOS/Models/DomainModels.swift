@@ -764,6 +764,9 @@ public struct SpeakerProfile: Identifiable, Codable, Sendable, Hashable {
     public var organization: String?
     public var notesOrContext: String?
     public var aliases: [String]
+    public var voiceprint: Voiceprint?
+    public var genderEstimate: String?
+    public var voiceSampleWavData: Data?
     public var createdAt: Date
     public var updatedAt: Date
 
@@ -775,6 +778,9 @@ public struct SpeakerProfile: Identifiable, Codable, Sendable, Hashable {
         organization: String? = nil,
         notesOrContext: String? = nil,
         aliases: [String] = [],
+        voiceprint: Voiceprint? = nil,
+        genderEstimate: String? = nil,
+        voiceSampleWavData: Data? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -785,6 +791,9 @@ public struct SpeakerProfile: Identifiable, Codable, Sendable, Hashable {
         self.organization = organization
         self.notesOrContext = notesOrContext
         self.aliases = aliases
+        self.voiceprint = voiceprint
+        self.genderEstimate = genderEstimate
+        self.voiceSampleWavData = voiceSampleWavData
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

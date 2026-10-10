@@ -36,11 +36,12 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
     private var lastSilenceAppendDate: Date = Date.distantPast
     public var contextualStrings: [String] = []
 
-    // Energy tracking for speaker attribution
+    // Energy & acoustic tracking for speaker attribution
     private var micEnergyAccumulator: Double = 0
     private var sysEnergyAccumulator: Double = 0
     private var lastAttributedSpeaker: String = "You"
     private var lastAttributedTrackId: String = ""
+    private var currentUtterancePCMData: Data = Data()
 
     private let audioFormat: AVAudioFormat
 
@@ -185,15 +186,29 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
             }
             lastRoutedTrackType = targetTrackType
 
-            // Update speaker attribution
+            // Update speaker attribution & accumulate acoustic buffer
             let micTrack = registeredTracks.values.first { $0.sourceType == .microphone }
             let sysTrack = registeredTracks.values.first { $0.sourceType == .systemAudio }
+            if currentUtterancePCMData.count < Int(AudioCaptureService.sampleRate) * 2 * 4 {
+                currentUtterancePCMData.append(pcmData)
+            }
+
             if targetTrackType == .microphone {
-                lastAttributedSpeaker = "You"
+                let userName = UserDefaults.standard.string(forKey: "sidebrief_user_name") ?? "You"
+                lastAttributedSpeaker = userName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "You" : userName
                 lastAttributedTrackId = micTrack?.id ?? trackId
             } else {
-                lastAttributedSpeaker = "Remote Speaker"
                 lastAttributedTrackId = sysTrack?.id ?? trackId
+                if currentUtterancePCMData.count >= 3200 {
+                    lastAttributedSpeaker = SpeakerDiarizationService.shared.attributeSpeaker(
+                        meetingId: currentMeetingId,
+                        isMic: false,
+                        pcmData: currentUtterancePCMData,
+                        sampleRate: AudioCaptureService.sampleRate
+                    )
+                } else if lastAttributedSpeaker == "You" {
+                    lastAttributedSpeaker = "Speaker 1"
+                }
             }
 
             // Apple SFSpeechRecognitionTask max recommended duration is ~45-60 seconds.
@@ -249,7 +264,12 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
                 let isMicDominant = (lastRoutedTrackType == .microphone)
                 let micTrack = registeredTracks.values.first { $0.sourceType == .microphone }
                 let sysTrack = registeredTracks.values.first { $0.sourceType == .systemAudio }
-                let speaker = isMicDominant ? "You" : "Remote Speaker"
+                let speaker = SpeakerDiarizationService.shared.attributeSpeaker(
+                    meetingId: currentMeetingId,
+                    isMic: isMicDominant,
+                    pcmData: currentUtterancePCMData,
+                    sampleRate: AudioCaptureService.sampleRate
+                )
                 let targetTrackId = isMicDominant ? (micTrack?.id ?? lastAttributedTrackId) : (sysTrack?.id ?? lastAttributedTrackId)
                 let resolvedTrackId = targetTrackId.isEmpty ? trackId : targetTrackId
 
@@ -315,7 +335,12 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
             let isMicDominant = (lastRoutedTrackType == .microphone)
             let micTrack = registeredTracks.values.first { $0.sourceType == .microphone }
             let sysTrack = registeredTracks.values.first { $0.sourceType == .systemAudio }
-            let speaker = isMicDominant ? "You" : "Remote Speaker"
+            let speaker = SpeakerDiarizationService.shared.attributeSpeaker(
+                meetingId: currentMeetingId,
+                isMic: isMicDominant,
+                pcmData: currentUtterancePCMData,
+                sampleRate: AudioCaptureService.sampleRate
+            )
             let targetTrackId = isMicDominant ? (micTrack?.id ?? lastAttributedTrackId) : (sysTrack?.id ?? lastAttributedTrackId)
             let resolvedTrackId = targetTrackId.isEmpty ? (registeredTracks.keys.first ?? "audio") : targetTrackId
 
@@ -332,6 +357,9 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
             )
             continuation.yield(.committed(segment: segment))
         }
+
+        // Reset utterance buffer & energy
+        currentUtterancePCMData = Data()
 
         // Reset utterance energy
         micEnergyAccumulator = 0

@@ -167,7 +167,13 @@ public final class WhisperTranscriptionAdapter: TranscriptionServiceProtocol, @u
             let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !cleanText.isEmpty else { return }
 
-            let speaker = (track.sourceType == .microphone) ? "You" : "Remote Speaker"
+            let isMic = (track.sourceType == .microphone)
+            let speaker = SpeakerDiarizationService.shared.attributeSpeaker(
+                meetingId: meetingId,
+                isMic: isMic,
+                pcmData: pcmData,
+                sampleRate: track.sampleRate
+            )
             let segId = UUID().uuidString
             let segment = TranscriptSegment(
                 id: segId,

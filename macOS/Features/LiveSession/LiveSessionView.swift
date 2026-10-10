@@ -30,6 +30,7 @@ public struct LiveSessionView: View {
     @State private var showEvidence: Bool = false
     @State private var chatInput: String = ""
     @State private var copiedNotice: Bool = false
+    @State private var isShowingBatchSpeakerRename: Bool = false
 
     public init(
         meeting: Binding<Meeting>,
@@ -110,6 +111,18 @@ public struct LiveSessionView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .sheet(isPresented: $isShowingBatchSpeakerRename) {
+            BatchSpeakerRenameSheet(
+                meetingId: meeting.id,
+                spaceId: meeting.spaceId,
+                onDismiss: { isShowingBatchSpeakerRename = false },
+                onApply: { renames in
+                    for (oldLabel, newLabel) in renames {
+                        onRenameSpeaker?(oldLabel, newLabel)
+                    }
+                }
+            )
+        }
     }
 
     // MARK: - Top Controls Bar
@@ -292,6 +305,14 @@ public struct LiveSessionView: View {
                 }
                 .keyboardShortcut(" ", modifiers: [.control, .option])
                 .help("Help me answer (Control-Option-Space)")
+
+                Button(action: { isShowingBatchSpeakerRename = true }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.2.waveform.badge.magnifyingglass")
+                        Text("Speakers")
+                    }
+                }
+                .help("Review speaker voices, listen to audio samples, and batch rename")
             }
         }
         .padding(14)
