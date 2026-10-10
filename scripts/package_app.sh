@@ -74,6 +74,10 @@ cat << 'EOF' > "$CONTENTS/Info.plist"
     <string>Sidebrief captures system audio via ScreenCaptureKit to transcribe remote participants.</string>
     <key>NSSystemAdministrationUsageDescription</key>
     <string>Sidebrief captures system audio via ScreenCaptureKit to transcribe remote participants.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>Sidebrief accesses your calendar to detect upcoming meetings, link meeting titles, and identify attendees.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Sidebrief accesses your calendar to detect upcoming meetings, link meeting titles, and identify attendees.</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>

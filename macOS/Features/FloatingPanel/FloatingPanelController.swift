@@ -25,7 +25,9 @@ public final class FloatingPanelController: NSWindowController, @unchecked Senda
         panel.titleVisibility = .hidden
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.minSize = NSSize(width: 380, height: 400)
+        // Stealth Mode: Window is excluded from screen capture (Zoom, Google Meet, Microsoft Teams, Slack screen shares)
+        panel.sharingType = .none
+        panel.minSize = NSSize(width: 320, height: 180)
         panel.maxSize = NSSize(width: 600, height: 900)
         panel.setFrameAutosaveName("SidebriefFloatingPanelAutosave")
 

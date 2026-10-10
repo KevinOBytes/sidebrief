@@ -22,6 +22,7 @@ public struct LiveSessionView: View {
     public var onAskChat: (String) -> Void
 
     @ObservedObject private var syncEngine = SyncEngine.shared
+    @ObservedObject private var calendarService = CalendarService.shared
     @State private var renamingSpeaker: String? = nil
     @State private var newSpeakerName: String = ""
     @State private var saveToSpeakerDirectory: Bool = true
@@ -74,6 +75,58 @@ public struct LiveSessionView: View {
         VStack(spacing: 0) {
             // Top Controls Bar
             topControlBar
+
+            // Upcoming Calendar Event Banner (Zero-friction meeting prep)
+            if (captureState == .idle || captureState == .failed), let next = calendarService.nextMeeting {
+                HStack(spacing: 12) {
+                    Image(systemName: "calendar.badge.clock")
+                        .foregroundColor(.accentColor)
+                        .font(.system(size: 15))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(next.title)
+                                .font(.system(size: 12, weight: .bold))
+                            Text(next.statusBadge)
+                                .font(.system(size: 10, weight: .semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(next.isHappeningNow ? Color.green.opacity(0.15) : Color.blue.opacity(0.15))
+                                .foregroundColor(next.isHappeningNow ? .green : .blue)
+                                .clipShape(Capsule())
+                        }
+
+                        Text("\(next.formattedTimeRange)\(next.attendees.isEmpty ? "" : " • \(next.attendees.count) attendees")\(next.locationOrURL != nil ? " • Link detected" : "")")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button(action: {
+                        meeting.title = next.title
+                        onStartRecording()
+                    }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "record.circle")
+                            Text("Start & Link Calendar")
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .help("Start meeting titled '\(next.title)' and associate scheduled attendees")
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color.accentColor.opacity(0.08))
+                .overlay(
+                    Rectangle()
+                        .frame(height: 1)
+                        .foregroundColor(Color.accentColor.opacity(0.2)),
+                    alignment: .bottom
+                )
+            }
 
             if captureState == .degraded {
                 HStack(spacing: 8) {

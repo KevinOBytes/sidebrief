@@ -12,8 +12,10 @@ public struct FloatingAssistantView: View {
     public var onRequestImmediateHelp: () -> Void
     public var onAskChat: (String) -> Void
 
+    @AppStorage("floating_teleprompter_mode") private var isTeleprompterMode: Bool = true
     @State private var selectedAlternativeIndex: Int = 0 // 0 = primary, 1 = alt 1, 2 = alt 2
     @State private var showEvidence: Bool = false
+    @State private var isReasoningExpanded: Bool = false
     @State private var chatInput: String = ""
     @State private var copiedNotice: Bool = false
 
@@ -72,12 +74,16 @@ public struct FloatingAssistantView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     if let card = currentSuggestion {
-                        suggestionCardView(card)
+                        if isTeleprompterMode {
+                            teleprompterCardView(card)
+                        } else {
+                            suggestionCardView(card)
+                        }
                     } else {
                         idleListeningView
                     }
                 }
-                .padding(16)
+                .padding(14)
             }
 
             Divider()
@@ -85,7 +91,7 @@ public struct FloatingAssistantView: View {
             // Quick Chat Bar
             chatBar
         }
-        .frame(minWidth: 380, minHeight: 450)
+        .frame(minWidth: 360, minHeight: isTeleprompterMode ? 280 : 450)
         .background(VisualEffectView(material: .hudWindow, blendingMode: .behindWindow))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
@@ -97,40 +103,55 @@ public struct FloatingAssistantView: View {
     // MARK: - Subviews
 
     private var headerBar: some View {
-        HStack {
+        HStack(spacing: 8) {
             HStack(spacing: 6) {
                 Circle()
                     .fill(Color.green)
                     .frame(width: 8, height: 8)
                 Text("Sidebrief")
                     .font(.system(size: 13, weight: .bold))
-                Text("•")
-                    .foregroundColor(.secondary)
+
+                // Stealth Mode Badge (Indicates window is invisible during screen share)
+                HStack(spacing: 3) {
+                    Image(systemName: "eye.slash.fill")
+                        .font(.system(size: 9))
+                    Text("Stealth")
+                        .font(.system(size: 9, weight: .bold))
+                }
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Color.primary.opacity(0.06))
+                .clipShape(Capsule())
+                .help("Invisible on Zoom, Google Meet, and screen shares")
+
                 Text(contextSpaceName)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 10, weight: .medium))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(Color.blue.opacity(0.15))
                     .foregroundColor(.blue)
                     .clipShape(Capsule())
-
-                // Compact Token & Cost Badge
-                if tokenUsage.estimatedCostUSD > 0 || tokenUsage.totalTokens > 0 {
-                    HStack(spacing: 3) {
-                        Image(systemName: "dollarsign.circle.fill")
-                            .foregroundColor(.green)
-                            .font(.system(size: 9))
-                        Text(String(format: "$%.3f", tokenUsage.estimatedCostUSD))
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    }
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(Color.green.opacity(0.12))
-                    .clipShape(Capsule())
-                }
             }
 
             Spacer()
+
+            // Teleprompter vs Detailed Toggle
+            Button(action: { isTeleprompterMode.toggle() }) {
+                HStack(spacing: 4) {
+                    Image(systemName: isTeleprompterMode ? "text.bubble.fill" : "list.bullet.rectangle.portrait")
+                        .font(.system(size: 10))
+                    Text(isTeleprompterMode ? "Teleprompter" : "Detailed")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(isTeleprompterMode ? Color.accentColor.opacity(0.2) : Color.primary.opacity(0.08))
+                .foregroundColor(isTeleprompterMode ? .accentColor : .secondary)
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help(isTeleprompterMode ? "Switch to detailed card view" : "Switch to concise teleprompter cues")
 
             if currentSuggestion != nil {
                 Button(action: {
@@ -152,8 +173,117 @@ public struct FloatingAssistantView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private func teleprompterCardView(_ card: SuggestionCard) -> some View {
+        let options = currentAlternativesList(for: card)
+        let selectedAlt = options[min(selectedAlternativeIndex, options.count - 1)]
+
+        return VStack(alignment: .leading, spacing: 10) {
+            // Topic Pill
+            if !card.detectedTopicOrQuestion.isEmpty {
+                HStack(spacing: 5) {
+                    Image(systemName: "sparkles")
+                        .foregroundColor(.accentColor)
+                        .font(.system(size: 9))
+                    Text(card.detectedTopicOrQuestion)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                    Spacer()
+                    Text(card.triggerReason.rawValue.uppercased())
+                        .font(.system(size: 8, weight: .bold))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color.primary.opacity(0.06))
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+            }
+
+            // Punchy High-Contrast Cue Box
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .top, spacing: 6) {
+                    Text("✦")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.accentColor)
+
+                    Text(selectedAlt.text)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // If rationale exists and user toggled reasoning
+                if isReasoningExpanded {
+                    if let rationale = selectedAlt.rationale, !rationale.isEmpty {
+                        Text("Context: \(rationale)")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .padding(.top, 4)
+                    }
+
+                    if !card.evidenceQuotes.isEmpty {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("SOURCES:")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.secondary)
+                            let quotes = Array(card.evidenceQuotes.prefix(2))
+                            ForEach(quotes, id: \.id) { q in
+                                Text("\"\(q.snippet)\" — \(q.sourceTitle)")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+            }
+            .padding(12)
+            .background(Color.accentColor.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.accentColor.opacity(0.2), lineWidth: 1)
+            )
+
+            // Alternatives Pills & Expand Button
+            HStack(spacing: 6) {
+                if options.count > 1 {
+                    ForEach(0..<options.count, id: \.self) { idx in
+                        Button(action: {
+                            selectedAlternativeIndex = idx
+                        }) {
+                            Text(options[idx].label)
+                                .font(.system(size: 10, weight: selectedAlternativeIndex == idx ? .bold : .medium))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(selectedAlternativeIndex == idx ? Color.accentColor : Color.primary.opacity(0.06))
+                                .foregroundColor(selectedAlternativeIndex == idx ? .white : .primary)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                Spacer()
+
+                Button(action: { isReasoningExpanded.toggle() }) {
+                    HStack(spacing: 3) {
+                        Text(isReasoningExpanded ? "Less" : "Why")
+                            .font(.system(size: 10, weight: .medium))
+                        Image(systemName: isReasoningExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 8))
+                    }
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     private func suggestionCardView(_ card: SuggestionCard) -> some View {
@@ -344,7 +474,11 @@ public struct FloatingAssistantView: View {
 
     private var chatBar: some View {
         HStack(spacing: 8) {
-            TextField("Ask copilot anything...", text: $chatInput)
+            Image(systemName: "sparkle.magnifyingglass")
+                .foregroundColor(.secondary)
+                .font(.system(size: 12))
+
+            TextField("Ask copilot anything... (Return to Send)", text: $chatInput)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
                 .onSubmit {
