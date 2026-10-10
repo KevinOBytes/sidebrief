@@ -668,7 +668,11 @@ public final class AppCoordinator: ObservableObject {
                     primaryResponse: SuggestionAlternative(label: "Answer", text: answer),
                     evidenceCategory: .basedOnDiscussion
                 )
-                self.currentSuggestion = card
+                await MainActor.run {
+                    self.currentSuggestion = card
+                    self.isPinned = true
+                    self.assistanceCoordinator?.pinSuggestion(cardId: card.id)
+                }
             }
         }
     }

@@ -17,6 +17,8 @@ public struct MeetingDetailView: View {
 
     @State private var selectedTab: Int = 0 // 0 = Summary, 1 = Transcript, 2 = Decisions & Tasks
     @State private var copiedEmailNotice: Bool = false
+    @State private var copiedSlackNotice: Bool = false
+    @State private var copiedMarkdownNotice: Bool = false
     @State private var showingDeleteAlert: Bool = false
     @State private var transcriptSearchText: String = ""
     @State private var renamingSpeaker: String? = nil
@@ -264,6 +266,55 @@ public struct MeetingDetailView: View {
     private var summaryTabView: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let sum = summary {
+                // Executive Action Suite: 1-Click Dispatch
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("EXECUTIVE ACTIONS")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 8) {
+                        Button(action: {
+                            let body = sum.followUpEmailDraft ?? sum.overview
+                            openInMailApp(subject: "Follow-up: \(meeting.title)", body: body)
+                        }) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "paperplane.fill")
+                                Text("Draft in Mail")
+                            }
+                            .font(.system(size: 11, weight: .semibold))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .help("Open pre-composed follow-up email draft in Apple Mail")
+
+                        Button(action: {
+                            copySlackRecap(sum: sum)
+                        }) {
+                            HStack(spacing: 5) {
+                                Image(systemName: copiedSlackNotice ? "checkmark" : "bubble.left.and.bubble.right.fill")
+                                Text(copiedSlackNotice ? "Copied Slack" : "Copy Slack Recap")
+                            }
+                            .font(.system(size: 11, weight: .medium))
+                        }
+                        .buttonStyle(.bordered)
+                        .help("Copy formatted bulleted recap for Slack or Microsoft Teams")
+
+                        Button(action: {
+                            copyMarkdownSummary(sum: sum)
+                        }) {
+                            HStack(spacing: 5) {
+                                Image(systemName: copiedMarkdownNotice ? "checkmark" : "doc.on.doc")
+                                Text(copiedMarkdownNotice ? "Copied Notes" : "Copy Markdown")
+                            }
+                            .font(.system(size: 11, weight: .medium))
+                        }
+                        .buttonStyle(.bordered)
+                        .help("Copy clean Markdown summary with decisions and action items")
+                    }
+                }
+                .padding(12)
+                .background(Color.primary.opacity(0.04))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
                 // Overview
                 VStack(alignment: .leading, spacing: 6) {
                     Text("EXECUTIVE OVERVIEW")
@@ -301,6 +352,18 @@ public struct MeetingDetailView: View {
                                 .font(.system(size: 11, weight: .bold))
                                 .foregroundColor(.secondary)
                             Spacer()
+
+                            Button(action: {
+                                openInMailApp(subject: "Follow-up: \(meeting.title)", body: draft)
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "paperplane.fill")
+                                    Text("Open in Mail")
+                                }
+                                .font(.system(size: 11, weight: .medium))
+                            }
+                            .buttonStyle(.bordered)
+
                             Button(action: {
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString(draft, forType: .string)
@@ -646,6 +709,93 @@ public struct MeetingDetailView: View {
         guard !q.isEmpty else { return transcriptSegments }
         return transcriptSegments.filter {
             $0.text.localizedCaseInsensitiveContains(q) || $0.speakerLabel.localizedCaseInsensitiveContains(q)
+        }
+    }
+
+    // MARK: - Executive Action Helpers
+
+    private func openInMailApp(subject: String, body: String) {
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.queryItems = [
+            URLQueryItem(name: "subject", value: subject),
+            URLQueryItem(name: "body", value: body)
+        ]
+        if let url = components.url {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    private func copySlackRecap(sum: MeetingSummary) {
+        var slackText = "*Meeting Recap: \(meeting.title)* 🎯\n\n"
+        slackText += "*Overview:*\n\(sum.overview)\n\n"
+        if !sum.keyPoints.isEmpty {
+            slackText += "*Key Discussion Points:*\n"
+            for pt in sum.keyPoints {
+                slackText += "• \(pt)\n"
+            }
+            slackText += "\n"
+        }
+        if !sum.decisions.isEmpty {
+            slackText += "*Key Decisions:*\n"
+            for d in sum.decisions {
+                slackText += "• ✅ \(d)\n"
+            }
+            slackText += "\n"
+        }
+        if !sum.actionItems.isEmpty {
+            slackText += "*Action Items:*\n"
+            for a in sum.actionItems {
+                let assignee = a.assignee?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? "*@\(a.assignee!)*" : "*Team*"
+                let due = a.dueDate != nil ? " (Due: \(a.dueDate!))" : ""
+                slackText += "• [ ] \(assignee): \(a.task)\(due)\n"
+            }
+            slackText += "\n"
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(slackText, forType: .string)
+        copiedSlackNotice = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            copiedSlackNotice = false
+        }
+    }
+
+    private func copyMarkdownSummary(sum: MeetingSummary) {
+        var mdText = "# \(meeting.title)\n\n"
+        if let start = meeting.actualStartTime {
+            let df = DateFormatter()
+            df.dateStyle = .medium
+            df.timeStyle = .short
+            mdText += "Date: \(df.string(from: start))\n\n"
+        }
+        mdText += "## Overview\n\(sum.overview)\n\n"
+        if !sum.keyPoints.isEmpty {
+            mdText += "## Key Discussion Points\n"
+            for pt in sum.keyPoints {
+                mdText += "- \(pt)\n"
+            }
+            mdText += "\n"
+        }
+        if !sum.decisions.isEmpty {
+            mdText += "## Decisions\n"
+            for d in sum.decisions {
+                mdText += "- **Decision**: \(d)\n"
+            }
+            mdText += "\n"
+        }
+        if !sum.actionItems.isEmpty {
+            mdText += "## Action Items\n"
+            for a in sum.actionItems {
+                let due = a.dueDate != nil ? " *(Due: \(a.dueDate!))*" : ""
+                mdText += "- [ ] **\(a.assignee ?? "Team")**: \(a.task)\(due)\n"
+            }
+            mdText += "\n"
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(mdText, forType: .string)
+        copiedMarkdownNotice = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            copiedMarkdownNotice = false
         }
     }
 }
