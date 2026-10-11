@@ -143,6 +143,8 @@ public struct FloatingAssistantView: View {
                         .font(.system(size: 10))
                     Text(isTeleprompterMode ? "Teleprompter" : "Detailed")
                         .font(.system(size: 10, weight: .semibold))
+                        .lineLimit(1)
+                        .fixedSize()
                 }
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
@@ -151,6 +153,7 @@ public struct FloatingAssistantView: View {
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
             .help(isTeleprompterMode ? "Switch to detailed card view" : "Switch to concise teleprompter cues")
 
             if currentSuggestion != nil {
@@ -163,6 +166,7 @@ public struct FloatingAssistantView: View {
                         .foregroundColor(isPinned ? .orange : .secondary)
                 }
                 .buttonStyle(.plain)
+                .fixedSize(horizontal: true, vertical: false)
                 .help(isPinned ? "Unpin suggestion" : "Pin suggestion")
             }
 
@@ -172,6 +176,7 @@ public struct FloatingAssistantView: View {
                     .foregroundColor(.secondary)
             }
             .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
