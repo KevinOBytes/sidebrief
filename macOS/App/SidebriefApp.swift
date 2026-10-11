@@ -32,11 +32,15 @@ public struct SidebriefApp: App {
                         HStack(spacing: 5) {
                             Image(systemName: "plus.circle.fill")
                             Text("New Meeting")
+                                .lineLimit(1)
+                                .fixedSize()
                         }
                     }
+                    .fixedSize(horizontal: true, vertical: false)
                     .help("Start New Meeting (⌘N)")
                 }
             }
+            .frame(minWidth: 1040, minHeight: 680)
             .sheet(isPresented: $isShowingOnboarding) {
                 OnboardingView(isPresented: $isShowingOnboarding) { configuredSpaces, activeSpaceId in
                     hasCompletedOnboarding = true
@@ -236,10 +240,14 @@ public struct SidebriefApp: App {
                         .font(.system(size: 15))
                     Text("New Meeting")
                         .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                        .fixedSize()
                     Spacer()
                     Text("⌘N")
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .opacity(0.7)
+                        .lineLimit(1)
+                        .fixedSize()
                 }
                 .foregroundColor(.white)
                 .padding(.horizontal, 12)
@@ -296,7 +304,7 @@ public struct SidebriefApp: App {
             }
             .listStyle(.sidebar)
         }
-        .frame(minWidth: 200)
+        .frame(minWidth: 200, idealWidth: 230, maxWidth: 280)
     }
 
     // MARK: - Detail View
@@ -342,6 +350,9 @@ public struct SidebriefApp: App {
                 },
                 onAskChat: { prompt in
                     coordinator.handleInMeetingChat(prompt: prompt)
+                },
+                onToggleHUD: {
+                    coordinator.toggleFloatingPanel()
                 }
             )
 

@@ -20,6 +20,7 @@ public struct LiveSessionView: View {
     public var tokenUsage: TokenUsage = TokenUsage()
     public var onRenameSpeaker: ((_ oldLabel: String, _ newLabel: String) -> Void)? = nil
     public var onAskChat: (String) -> Void
+    public var onToggleHUD: (() -> Void)? = nil
 
     @ObservedObject private var syncEngine = SyncEngine.shared
     @ObservedObject private var calendarService = CalendarService.shared
@@ -50,7 +51,8 @@ public struct LiveSessionView: View {
         onTriggerHelp: @escaping () -> Void,
         onPinToggled: @escaping (Bool) -> Void,
         onRenameSpeaker: ((_ oldLabel: String, _ newLabel: String) -> Void)? = nil,
-        onAskChat: @escaping (String) -> Void
+        onAskChat: @escaping (String) -> Void,
+        onToggleHUD: (() -> Void)? = nil
     ) {
         self._meeting = meeting
         self._transcriptSegments = transcriptSegments
@@ -69,6 +71,7 @@ public struct LiveSessionView: View {
         self.onPinToggled = onPinToggled
         self.onRenameSpeaker = onRenameSpeaker
         self.onAskChat = onAskChat
+        self.onToggleHUD = onToggleHUD
     }
 
     public var body: some View {
@@ -81,12 +84,13 @@ public struct LiveSessionView: View {
                 HStack(spacing: 12) {
                     Image(systemName: "calendar.badge.clock")
                         .foregroundColor(.accentColor)
-                        .font(.system(size: 15))
+                        .font(.system(size: 16))
 
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(next.title)
-                                .font(.system(size: 12, weight: .bold))
+                                .font(.system(size: 13, weight: .bold))
+                                .lineLimit(1)
                             Text(next.statusBadge)
                                 .font(.system(size: 10, weight: .semibold))
                                 .padding(.horizontal, 6)
@@ -94,31 +98,39 @@ public struct LiveSessionView: View {
                                 .background(next.isHappeningNow ? Color.green.opacity(0.15) : Color.blue.opacity(0.15))
                                 .foregroundColor(next.isHappeningNow ? .green : .blue)
                                 .clipShape(Capsule())
+                                .lineLimit(1)
+                                .fixedSize()
                         }
 
                         Text("\(next.formattedTimeRange)\(next.attendees.isEmpty ? "" : " • \(next.attendees.count) attendees")\(next.locationOrURL != nil ? " • Link detected" : "")")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
+                            .lineLimit(1)
                     }
+                    .layoutPriority(1)
 
-                    Spacer()
+                    Spacer(minLength: 16)
 
                     Button(action: {
                         meeting.title = next.title
                         onStartRecording()
                     }) {
                         HStack(spacing: 5) {
-                            Image(systemName: "record.circle")
+                            Image(systemName: "record.circle.fill")
                             Text("Start & Link Calendar")
+                                .lineLimit(1)
+                                .fixedSize()
                         }
                         .font(.system(size: 11, weight: .semibold))
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .layoutPriority(10)
                     .help("Start meeting titled '\(next.title)' and associate scheduled attendees")
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.vertical, 10)
                 .background(Color.accentColor.opacity(0.08))
                 .overlay(
                     Rectangle()
@@ -181,218 +193,314 @@ public struct LiveSessionView: View {
     // MARK: - Top Controls Bar
 
     private var topControlBar: some View {
-        HStack(spacing: 16) {
-            // State indicator
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(stateColor)
-                    .frame(width: 10, height: 10)
+        HStack(spacing: 12) {
+            // Meeting Status & Title (Left)
+            HStack(spacing: 10) {
+                // Pulsing Status Dot
+                ZStack {
+                    Circle()
+                        .fill(stateColor.opacity(0.25))
+                        .frame(width: 16, height: 16)
+                    Circle()
+                        .fill(stateColor)
+                        .frame(width: 9, height: 9)
+                }
+
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(meeting.title.isEmpty ? "Active Meeting" : meeting.title)
-                        .font(.system(size: 14, weight: .bold))
+                    HStack(spacing: 6) {
+                        Text(meeting.title.isEmpty ? "Active Meeting" : meeting.title)
+                            .font(.system(size: 14, weight: .bold))
+                            .lineLimit(1)
+
+                        // Space Tag
+                        Text(contextSpaceName)
+                            .font(.system(size: 9, weight: .semibold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.accentColor.opacity(0.12))
+                            .foregroundColor(.accentColor)
+                            .clipShape(Capsule())
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+
                     Text(stateText)
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
                 }
             }
+            .layoutPriority(1)
 
-            Spacer()
+            Spacer(minLength: 10)
 
-            // Dual Meters
-            HStack(spacing: 14) {
-                meterBar(title: "Mic", level: micMeter.linearLevel, db: micMeter.peakPower)
-                meterBar(title: "System", level: systemMeter.linearLevel, db: systemMeter.peakPower)
+            // Sleek Telemetry Capsule (Compact meters + Live Cost + Sync)
+            telemetryCapsule
+                .layoutPriority(5)
+
+            // Action Buttons Group (Guaranteed full text, never truncated)
+            actionButtonsGroup
+                .layoutPriority(10)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+
+    // MARK: - Telemetry Capsule
+
+    private var telemetryCapsule: some View {
+        HStack(spacing: 10) {
+            // Dual mini VU meters
+            HStack(spacing: 8) {
+                miniMeter(label: "Mic", level: micMeter.linearLevel)
+                miniMeter(label: "Sys", level: systemMeter.linearLevel)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
             .background(Color.primary.opacity(0.04))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
 
-            // Live Token & Cost Badge
+            // Cost Badge Button
             Button {
                 showCostBreakdown.toggle()
             } label: {
-                HStack(spacing: 5) {
+                HStack(spacing: 4) {
                     Image(systemName: "dollarsign.circle.fill")
                         .foregroundColor(.green)
-                        .font(.system(size: 11))
+                        .font(.system(size: 10))
                     Text(String(format: "$%.3f", tokenUsage.estimatedCostUSD))
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
                     Text("•")
                         .foregroundColor(.secondary)
-                    Text("\(tokenUsage.totalTokens) tok")
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: 8))
+                    Text("\(tokenUsage.totalTokens)t")
+                        .font(.system(size: 9, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
                 .background(Color.green.opacity(0.1))
                 .cornerRadius(6)
             }
             .buttonStyle(.plain)
             .popover(isPresented: $showCostBreakdown) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Session Usage & Cost Breakdown")
-                        .font(.headline)
-                    Divider()
-                    HStack {
-                        Text("Prompt Tokens:")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(tokenUsage.promptTokens)")
-                            .font(.system(.body, design: .monospaced))
-                    }
-                    HStack {
-                        Text("Completion Tokens:")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(tokenUsage.completionTokens)")
-                            .font(.system(.body, design: .monospaced))
-                    }
-                    HStack {
-                        Text("Total Tokens:")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text("\(tokenUsage.totalTokens)")
-                            .font(.system(.body, design: .monospaced))
-                    }
-                    HStack {
-                        Text("Audio Duration:")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text(String(format: "%.1f min", tokenUsage.audioDurationSeconds / 60.0))
-                            .font(.system(.body, design: .monospaced))
-                    }
-                    Divider()
-                    HStack {
-                        Text("Estimated Total Cost:")
-                            .fontWeight(.bold)
-                        Spacer()
-                        Text(String(format: "$%.4f USD", tokenUsage.estimatedCostUSD))
-                            .fontWeight(.bold)
-                            .foregroundColor(.green)
-                            .font(.system(.body, design: .monospaced))
-                    }
-                }
-                .padding(14)
-                .frame(width: 280)
+                costBreakdownPopover
             }
 
-            // Cloud Sync Badge
+            // Sync Status
             syncStatusBadge(syncEngine.syncStatus)
+        }
+    }
 
-            // Action Buttons
-            HStack(spacing: 8) {
-                if captureState == .idle || captureState == .failed {
-                    Button(action: onStartRecording) {
-                        HStack(spacing: 5) {
-                            Image(systemName: "record.circle.fill")
-                            Text("Start New Meeting")
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .help("Start New Meeting (⌘N)")
-                } else if captureState == .initializing {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Starting...")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.horizontal, 6)
-
-                    Button(action: onStopRecording) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "xmark.circle")
-                            Text("Cancel")
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                } else if captureState == .capturing || captureState == .degraded {
-                    Button(action: onPauseRecording) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "pause.fill")
-                            Text("Pause")
-                        }
-                    }
-                    .help("Pause Recording")
-
-                    Button(action: onStopRecording) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "stop.fill")
-                            Text("Stop & Finalize")
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .help("Stop recording & finalize meeting")
-                } else if captureState == .paused {
-                    Button(action: onResumeRecording) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "play.fill")
-                            Text("Resume")
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.green)
-                    .help("Resume Recording")
-
-                    Button(action: onStopRecording) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "stop.fill")
-                            Text("Stop & Finalize")
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .help("Stop recording & finalize meeting")
+    private func miniMeter(label: String, level: Float) -> some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(Color.primary.opacity(0.1))
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(level > 0.8 ? Color.red : (level > 0.6 ? Color.yellow : Color.green))
+                        .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(level))))
                 }
+            }
+            .frame(width: 34, height: 5)
+        }
+    }
 
-                Button(action: onTriggerHelp) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "sparkles")
-                        Text("Help Me Answer")
-                    }
-                }
-                .keyboardShortcut(" ", modifiers: [.control, .option])
-                .help("Help me answer (Control-Option-Space)")
-
-                Button(action: { isShowingBatchSpeakerRename = true }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "person.2.waveform.badge.magnifyingglass")
-                        Text("Speakers")
-                    }
-                }
-                .help("Review speaker voices, listen to audio samples, and batch rename")
+    private var costBreakdownPopover: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Session Usage & Cost Breakdown")
+                .font(.headline)
+            Divider()
+            HStack {
+                Text("Prompt Tokens:")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(tokenUsage.promptTokens)")
+                    .font(.system(.body, design: .monospaced))
+            }
+            HStack {
+                Text("Completion Tokens:")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(tokenUsage.completionTokens)")
+                    .font(.system(.body, design: .monospaced))
+            }
+            HStack {
+                Text("Total Tokens:")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text("\(tokenUsage.totalTokens)")
+                    .font(.system(.body, design: .monospaced))
+            }
+            HStack {
+                Text("Audio Duration:")
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(String(format: "%.1f min", tokenUsage.audioDurationSeconds / 60.0))
+                    .font(.system(.body, design: .monospaced))
+            }
+            Divider()
+            HStack {
+                Text("Estimated Total Cost:")
+                    .fontWeight(.bold)
+                Spacer()
+                Text(String(format: "$%.4f USD", tokenUsage.estimatedCostUSD))
+                    .fontWeight(.bold)
+                    .foregroundColor(.green)
+                    .font(.system(.body, design: .monospaced))
             }
         }
         .padding(14)
-        .background(Color(NSColor.windowBackgroundColor))
+        .frame(width: 280)
     }
 
-    private func meterBar(title: String, level: Float, db: Float) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundColor(.secondary)
-                Spacer()
-                Text(String(format: "%.0f dB", db))
-                    .font(.system(size: 8, design: .monospaced))
-                    .foregroundColor(.secondary)
+    // MARK: - Action Buttons Group
+
+    private var actionButtonsGroup: some View {
+        HStack(spacing: 8) {
+            // 1. Primary Record / Control Button
+            if captureState == .idle || captureState == .failed {
+                Button(action: onStartRecording) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "record.circle.fill")
+                        Text("Start Meeting")
+                            .fontWeight(.semibold)
+                    }
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 4)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .fixedSize(horizontal: true, vertical: false)
+                .help("Start New Meeting (⌘N)")
+            } else if captureState == .initializing {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Starting...")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+                .padding(.horizontal, 6)
+
+                Button(action: onStopRecording) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark.circle")
+                        Text("Cancel")
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+                .buttonStyle(.bordered)
+                .fixedSize(horizontal: true, vertical: false)
+            } else if captureState == .capturing || captureState == .degraded {
+                Button(action: onPauseRecording) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "pause.fill")
+                        Text("Pause")
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+                .buttonStyle(.bordered)
+                .fixedSize(horizontal: true, vertical: false)
+                .help("Pause Recording")
+
+                Button(action: onStopRecording) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "stop.fill")
+                        Text("Stop & Finalize")
+                            .fontWeight(.semibold)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .fixedSize(horizontal: true, vertical: false)
+                .help("Stop recording & finalize meeting")
+            } else if captureState == .paused {
+                Button(action: onResumeRecording) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "play.fill")
+                        Text("Resume")
+                            .fontWeight(.semibold)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .fixedSize(horizontal: true, vertical: false)
+                .help("Resume Recording")
+
+                Button(action: onStopRecording) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "stop.fill")
+                        Text("Stop & Finalize")
+                            .fontWeight(.semibold)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .fixedSize(horizontal: true, vertical: false)
+                .help("Stop recording & finalize meeting")
             }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.primary.opacity(0.1))
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(level > 0.8 ? Color.red : (level > 0.6 ? Color.yellow : Color.green))
-                        .frame(width: geo.size.width * CGFloat(level))
+
+            // 2. Help Me Answer / Copilot Button
+            Button(action: onTriggerHelp) {
+                HStack(spacing: 4) {
+                    Image(systemName: "sparkles")
+                    Text("Help Me Answer")
+                        .lineLimit(1)
+                        .fixedSize()
                 }
             }
-            .frame(width: 80, height: 6)
+            .buttonStyle(.bordered)
+            .fixedSize(horizontal: true, vertical: false)
+            .keyboardShortcut(" ", modifiers: [.control, .option])
+            .help("Help me answer (Control-Option-Space)")
+
+            // 3. Speakers Directory Button
+            Button(action: { isShowingBatchSpeakerRename = true }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "person.2.waveform.badge.magnifyingglass")
+                    Text("Speakers")
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .buttonStyle(.bordered)
+            .fixedSize(horizontal: true, vertical: false)
+            .help("Review speaker voices, listen to audio samples, and batch rename")
+
+            // 4. Floating HUD Button
+            if let onToggleHUD = onToggleHUD {
+                Button(action: onToggleHUD) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "pip.and.dock")
+                        Text("HUD")
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+                .buttonStyle(.bordered)
+                .fixedSize(horizontal: true, vertical: false)
+                .help("Toggle floating teleprompter HUD (⌥⌘H)")
+            }
         }
     }
 
@@ -441,31 +549,51 @@ public struct LiveSessionView: View {
         let isYou = (seg.speakerLabel == "You")
 
         return HStack(alignment: .top, spacing: 10) {
-            // Speaker Avatar / Badge
-            Circle()
-                .fill(isYou ? Color.accentColor : Color.purple)
-                .frame(width: 24, height: 24)
-                .overlay(
-                    Text(isYou ? "U" : "R")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(.white)
-                )
+            // Speaker Avatar with Initials
+            ZStack {
+                Circle()
+                    .fill(isYou ? Color.accentColor.opacity(0.18) : Color.purple.opacity(0.18))
+                    .frame(width: 28, height: 28)
+
+                Text(speakerInitials(seg.speakerLabel))
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(isYou ? .accentColor : .purple)
+                    .lineLimit(1)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(seg.speakerLabel)
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: 12, weight: .bold))
                         .foregroundColor(isYou ? .accentColor : .purple)
+                        .lineLimit(1)
+
+                    // Track origin badge
+                    Text(isYou ? "YOU" : "REMOTE")
+                        .font(.system(size: 8, weight: .bold))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1.5)
+                        .background(Color.primary.opacity(0.06))
+                        .foregroundColor(.secondary)
+                        .clipShape(Capsule())
+                        .lineLimit(1)
+                        .fixedSize()
 
                     Button {
                         renamingSpeaker = seg.speakerLabel
                         newSpeakerName = seg.speakerLabel
                     } label: {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 9))
-                            .foregroundColor(.secondary)
+                        HStack(spacing: 2) {
+                            Image(systemName: "pencil")
+                            Text("Rename")
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .fixedSize(horizontal: true, vertical: false)
                     .help("Rename speaker")
                     .popover(isPresented: Binding(
                         get: { renamingSpeaker == seg.speakerLabel },
@@ -577,6 +705,16 @@ public struct LiveSessionView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
+    private func speakerInitials(_ label: String) -> String {
+        let parts = label.split(separator: " ").map(String.init)
+        if parts.count >= 2, let first = parts.first?.first, let second = parts[1].first {
+            return "\(first)\(second)".uppercased()
+        } else if let first = parts.first?.prefix(2) {
+            return String(first).uppercased()
+        }
+        return "SP"
+    }
+
     // MARK: - Live Inspector View
 
     private var liveInspectorView: some View {
@@ -589,6 +727,7 @@ public struct LiveSessionView: View {
                         .frame(width: 8, height: 8)
                     Text("Sidebrief Copilot")
                         .font(.system(size: 12, weight: .bold))
+                        .lineLimit(1)
                 }
 
                 Spacer()
@@ -600,6 +739,8 @@ public struct LiveSessionView: View {
                     .background(Color.accentColor.opacity(0.12))
                     .foregroundColor(.accentColor)
                     .clipShape(Capsule())
+                    .lineLimit(1)
+                    .fixedSize()
 
                 if currentSuggestion != nil {
                     Button(action: {
@@ -611,6 +752,7 @@ public struct LiveSessionView: View {
                             .foregroundColor(isPinned ? .orange : .secondary)
                     }
                     .buttonStyle(.plain)
+                    .fixedSize(horizontal: true, vertical: false)
                     .help(isPinned ? "Unpin suggestion" : "Pin suggestion")
                 }
             }
@@ -773,10 +915,13 @@ public struct LiveSessionView: View {
                     HStack(spacing: 4) {
                         Image(systemName: copiedNotice ? "checkmark" : "doc.on.doc")
                         Text(copiedNotice ? "Copied!" : "Copy")
+                            .lineLimit(1)
+                            .fixedSize()
                     }
                     .font(.system(size: 11, weight: .medium))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bordered)
+                .fixedSize(horizontal: true, vertical: false)
 
                 Spacer()
 
@@ -784,10 +929,13 @@ public struct LiveSessionView: View {
                     currentSuggestion = nil
                 }) {
                     Text("Dismiss")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
                 }
                 .buttonStyle(.plain)
+                .fixedSize(horizontal: true, vertical: false)
             }
         }
     }
@@ -813,15 +961,18 @@ public struct LiveSessionView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "sparkles")
                     Text("Help Me Answer Now")
+                        .lineLimit(1)
+                        .fixedSize()
                 }
                 .font(.system(size: 11, weight: .semibold))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
                 .background(Color.accentColor)
                 .foregroundColor(.white)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
 
             Spacer()
         }

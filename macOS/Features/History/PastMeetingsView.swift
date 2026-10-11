@@ -109,12 +109,15 @@ public struct PastMeetingsView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "plus")
                                 .font(.system(size: 10, weight: .bold))
-                            Text("New")
+                            Text("New Meeting")
                                 .font(.system(size: 11, weight: .semibold))
+                                .lineLimit(1)
+                                .fixedSize()
                         }
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+                    .fixedSize(horizontal: true, vertical: false)
                     .help("Start New Meeting (⌘N)")
                 }
             }

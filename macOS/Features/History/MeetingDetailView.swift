@@ -187,9 +187,12 @@ public struct MeetingDetailView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.triangle.2.circlepath.icloud")
                         Text("Sync to R2")
+                            .lineLimit(1)
+                            .fixedSize()
                     }
                 }
                 .buttonStyle(.bordered)
+                .fixedSize(horizontal: true, vertical: false)
                 .help("Upload pending encrypted audio chunks to Cloudflare R2")
 
                 // Export Menu
@@ -201,8 +204,11 @@ public struct MeetingDetailView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "square.and.arrow.up")
                         Text("Export")
+                            .lineLimit(1)
+                            .fixedSize()
                     }
                 }
+                .fixedSize(horizontal: true, vertical: false)
 
                 // Delete Button
                 if let onDelete = onDelete {
@@ -212,7 +218,8 @@ public struct MeetingDetailView: View {
                         Image(systemName: "trash")
                             .foregroundColor(.red)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.bordered)
+                    .fixedSize(horizontal: true, vertical: false)
                     .help("Delete Meeting")
                     .alert("Delete Meeting", isPresented: $showingDeleteAlert) {
                         Button("Delete", role: .destructive) {
@@ -280,10 +287,13 @@ public struct MeetingDetailView: View {
                             HStack(spacing: 5) {
                                 Image(systemName: "paperplane.fill")
                                 Text("Draft in Mail")
+                                    .lineLimit(1)
+                                    .fixedSize()
                             }
                             .font(.system(size: 11, weight: .semibold))
                         }
                         .buttonStyle(.borderedProminent)
+                        .fixedSize(horizontal: true, vertical: false)
                         .help("Open pre-composed follow-up email draft in Apple Mail")
 
                         Button(action: {
@@ -292,10 +302,13 @@ public struct MeetingDetailView: View {
                             HStack(spacing: 5) {
                                 Image(systemName: copiedSlackNotice ? "checkmark" : "bubble.left.and.bubble.right.fill")
                                 Text(copiedSlackNotice ? "Copied Slack" : "Copy Slack Recap")
+                                    .lineLimit(1)
+                                    .fixedSize()
                             }
                             .font(.system(size: 11, weight: .medium))
                         }
                         .buttonStyle(.bordered)
+                        .fixedSize(horizontal: true, vertical: false)
                         .help("Copy formatted bulleted recap for Slack or Microsoft Teams")
 
                         Button(action: {
@@ -304,10 +317,13 @@ public struct MeetingDetailView: View {
                             HStack(spacing: 5) {
                                 Image(systemName: copiedMarkdownNotice ? "checkmark" : "doc.on.doc")
                                 Text(copiedMarkdownNotice ? "Copied Notes" : "Copy Markdown")
+                                    .lineLimit(1)
+                                    .fixedSize()
                             }
                             .font(.system(size: 11, weight: .medium))
                         }
                         .buttonStyle(.bordered)
+                        .fixedSize(horizontal: true, vertical: false)
                         .help("Copy clean Markdown summary with decisions and action items")
                     }
                 }
