@@ -282,13 +282,13 @@ public final class MeetingExportService: @unchecked Sendable {
 
         // Transcript items
         for seg in segments {
-            let isYou = (seg.speakerLabel == "You")
             let timeStr = formatTimeOffsetMs(seg.startOffsetMs)
             let headerText = "\(seg.speakerLabel) [\(timeStr)]"
 
+            let speakerColor = SpeakerColorPalette.nsColor(for: seg.speakerLabel)
             let speakerAttr: [NSAttributedString.Key: Any] = [
                 .font: NSFont.boldSystemFont(ofSize: 10.5),
-                .foregroundColor: isYou ? NSColor.systemBlue : NSColor.systemPurple
+                .foregroundColor: speakerColor
             ]
             let speakerStr = NSAttributedString(string: headerText, attributes: speakerAttr)
             let speakerBounds = speakerStr.boundingRect(with: CGSize(width: contentWidth, height: 40), options: [.usesLineFragmentOrigin])

@@ -17,7 +17,10 @@ public final class AppCoordinator: ObservableObject {
     @Published public var micMeter = AudioLevelMeter()
     @Published public var systemMeter = AudioLevelMeter()
     @Published public var captureState: AudioCaptureState = .idle
+    @Published public var sttErrorMessage: String? = nil
     @Published public var recordingDurationSeconds: TimeInterval = 0
+    @Published public var lastMicAudioDate: Date = Date.distantPast
+    @Published public var lastSystemAudioDate: Date = Date.distantPast
     @Published public var activeSpeakerMap: [String: String] = [:]
     @Published public var currentMeetingTokenUsage: TokenUsage = TokenUsage()
 
@@ -317,6 +320,7 @@ public final class AppCoordinator: ObservableObject {
         self.currentMeeting = meeting
         self.transcriptSegments.removeAll()
         self.currentSuggestion = nil
+        self.sttErrorMessage = nil
         self.recordingDurationSeconds = 0
         self.activeSpeakerMap.removeAll()
         self.currentMeetingTokenUsage = TokenUsage()
@@ -379,11 +383,17 @@ public final class AppCoordinator: ObservableObject {
         // Setup Callbacks to yield non-blockingly into FIFO streams
         captureService.onMicPCMData = { [weak self, micCont] data, sampleCount, offsetMs in
             guard let self = self, let track = self.captureService.micTrack else { return }
+            Task { @MainActor in
+                self.lastMicAudioDate = Date()
+            }
             micCont.yield(STTAudioEnvelope(trackId: track.id, data: data, sampleCount: sampleCount, offsetMs: offsetMs))
         }
 
         captureService.onSystemPCMData = { [weak self, sysCont] data, sampleCount, offsetMs in
             guard let self = self, let track = self.captureService.systemTrack else { return }
+            Task { @MainActor in
+                self.lastSystemAudioDate = Date()
+            }
             sysCont.yield(STTAudioEnvelope(trackId: track.id, data: data, sampleCount: sampleCount, offsetMs: offsetMs))
         }
 
@@ -615,6 +625,7 @@ public final class AppCoordinator: ObservableObject {
 
         case .error(let trackId, let message):
             NSLog("[Sidebrief STT Error] Track %@: %@", trackId, message)
+            self.sttErrorMessage = message
         }
     }
 
