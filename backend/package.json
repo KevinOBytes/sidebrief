@@ -14,8 +14,8 @@
   "dependencies": {
     "@hono/node-server": "^1.13.8",
     "@neondatabase/serverless": "^0.10.4",
-    "hono": "^4.7.2",
-    "nodemailer": "^10.0.10",
+    "hono": "^4.13.14",
+    "nodemailer": "^10.1.4",
     "resend": "^6.28.1",
     "stripe": "^22.6.2"
   },
