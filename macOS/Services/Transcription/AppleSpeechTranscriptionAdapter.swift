@@ -4,7 +4,8 @@ import AVFoundation
 
 /// High-performance native macOS speech-to-text adapter using Apple's Speech framework (SFSpeechRecognizer).
 /// Operates on-device and via Apple Speech Engine with zero external API keys and zero network cost.
-/// Uses an Active Channel VAD Router & Synchronous Mixer to eliminate dual-track audio interleaving and time dilation.
+/// Maintains independent concurrent recognition sessions per audio track (Microphone & System Audio)
+/// with pre-roll buffering, acoustic silence gating, and automatic conversational turn commit.
 public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServiceProtocol, @unchecked Sendable {
     private let (stream, continuation) = AsyncStream.makeStream(of: TranscriptionEvent.self)
     public var eventStream: AsyncStream<TranscriptionEvent> { stream }
@@ -12,48 +13,71 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
     private let locale: Locale
     private let queue = DispatchQueue(label: "com.sidebrief.stt.applespeech", qos: .userInitiated)
 
-    private var registeredTracks: [String: AudioTrack] = [:]
-    private var currentMeetingId: String = ""
+    // Per-track independent recognition session
+    private final class TrackSession: @unchecked Sendable {
+        let trackId: String
+        let sourceType: AudioSourceType
+        let meetingId: String
+        let isMic: Bool
 
+        var currentRequest: SFSpeechAudioBufferRecognitionRequest?
+        var currentTask: SFSpeechRecognitionTask?
+        var currentTaskId: UUID = UUID()
+        var currentSegmentId: String = UUID().uuidString
+        var segmentStartOffsetMs: Int64 = 0
+        var latestOffsetMs: Int64 = 0
+        var lastEmittedText: String = ""
+        var taskStartTime: Date = Date()
+        var lastSpeechDate: Date = Date.distantPast
+        var lastErrorTime: Date = Date.distantPast
+
+        // Rolling 250ms circular pre-roll buffer (mono 16-bit 48kHz = 24,000 bytes)
+        // Preserves initial consonant phonemes on utterance onset
+        var preRollBuffer: Data = Data()
+        let maxPreRollBytes: Int = Int(AudioCaptureService.sampleRate) * MemoryLayout<Int16>.size / 4
+
+        // Utterance accumulation for speaker diarization
+        var utterancePCMData: Data = Data()
+        let maxUtteranceBytes: Int = Int(AudioCaptureService.sampleRate) * MemoryLayout<Int16>.size * 10 // 10 seconds max
+
+        var silenceTimer: Task<Void, Never>?
+
+        init(track: AudioTrack, meetingId: String) {
+            self.trackId = track.id
+            self.sourceType = track.sourceType
+            self.meetingId = meetingId
+            self.isMic = (track.sourceType == .microphone)
+        }
+    }
+
+    private var sessions: [String: TrackSession] = [:]
     private var recognizer: SFSpeechRecognizer?
-    private var currentRequest: SFSpeechAudioBufferRecognitionRequest?
-    private var currentTask: SFSpeechRecognitionTask?
-    private var currentTaskId: UUID = UUID()
-    private var currentSegmentId: String = UUID().uuidString
-    private var segmentStartOffsetMs: Int64 = 0
-    private var latestOffsetMs: Int64 = 0
-    private var lastEmittedText: String = ""
-    private var taskStartTime: Date = Date()
-    private var lastErrorTime: Date = Date.distantPast
     private var isClosing: Bool = false
-    private var silenceTimer: Task<Void, Never>?
 
-    // VAD & Active Channel Tracking
-    private let vadThreshold: Double = 220.0
-    private var lastMicSpeechDate: Date = Date.distantPast
-    private var lastSysSpeechDate: Date = Date.distantPast
-    private var lastRoutedTrackType: AudioSourceType = .microphone
-    private var lastSilenceAppendDate: Date = Date.distantPast
+    // Acoustic Gating: realistic noise floor threshold (-64 dBFS)
+    private let silenceFloorRMS: Double = 20.0
+    // Hangover preserves natural inter-word micro-pauses (e.g. stops before plosives)
+    private let speechHangoverSeconds: Double = 1.2
+    // Conversational turn commit interval on sustained silence
+    private let silenceCommitSeconds: Double = 1.3
+
     public var contextualStrings: [String] = []
-
-    // Energy & acoustic tracking for speaker attribution
-    private var micEnergyAccumulator: Double = 0
-    private var sysEnergyAccumulator: Double = 0
-    private var lastAttributedSpeaker: String = "You"
-    private var lastAttributedTrackId: String = ""
-    private var currentUtterancePCMData: Data = Data()
-
     private let audioFormat: AVAudioFormat
 
     public init(locale: Locale = Locale(identifier: "en-US")) {
         self.locale = locale
-        // Audio format matches AudioCaptureService target format: 48kHz mono 16-bit PCM
+        // Target format matches AudioCaptureService: 48kHz mono 16-bit PCM
         self.audioFormat = AVAudioFormat(
             commonFormat: .pcmFormatInt16,
             sampleRate: AudioCaptureService.sampleRate,
             channels: AVAudioChannelCount(AudioCaptureService.channelCount),
-            interleaved: true
-        ) ?? AVAudioFormat(standardFormatWithSampleRate: 48000.0, channels: 1)!
+            interleaved: false
+        ) ?? AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: 48000.0,
+            channels: 1,
+            interleaved: false
+        )!
         super.init()
     }
 
@@ -97,12 +121,9 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
 
         queue.sync {
             self.recognizer = validRecognizer
-            self.currentMeetingId = meetingId
-            self.registeredTracks[track.id] = track
-            if self.lastAttributedTrackId.isEmpty {
-                self.lastAttributedTrackId = track.id
-            }
             self.isClosing = false
+            let session = TrackSession(track: track, meetingId: meetingId)
+            self.sessions[track.id] = session
         }
 
         continuation.yield(.started(trackId: track.id))
@@ -111,7 +132,7 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
     public func sendAudioChunk(trackId: String, pcmData: Data, sampleCount: Int, offsetMs: Int64) async throws {
         guard sampleCount > 0, !pcmData.isEmpty else { return }
 
-        // Compute RMS signal energy for accurate VAD gating
+        // Compute RMS signal energy for noise floor gating
         var sumSquares: Double = 0
         pcmData.withUnsafeBytes { rawPtr in
             if let base = rawPtr.baseAddress?.assumingMemoryBound(to: Int16.self) {
@@ -124,171 +145,111 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
         let chunkRMS = sqrt(sumSquares / Double(sampleCount))
 
         queue.sync {
-            guard !isClosing else { return }
-            latestOffsetMs = offsetMs
+            guard !isClosing, let session = sessions[trackId] else { return }
+            session.latestOffsetMs = offsetMs
 
-            let track = registeredTracks[trackId]
-            let isMic = (track?.sourceType == .microphone)
-            let hasSpeech = (chunkRMS >= vadThreshold)
-
-            if hasSpeech {
-                if isMic {
-                    lastMicSpeechDate = Date()
-                    micEnergyAccumulator += chunkRMS * Double(sampleCount)
-                } else {
-                    lastSysSpeechDate = Date()
-                    sysEnergyAccumulator += chunkRMS * Double(sampleCount)
-                }
-            }
-
-            // Evaluate active speech with 350ms hangover to preserve natural inter-word micro-pauses
             let now = Date()
-            let micActive = (now.timeIntervalSince(lastMicSpeechDate) < 0.35)
-            let sysActive = (now.timeIntervalSince(lastSysSpeechDate) < 0.35)
+            let isChunkSpeech = (chunkRMS >= silenceFloorRMS)
+            if isChunkSpeech {
+                session.lastSpeechDate = now
+            }
+            let isWithinHangover = now.timeIntervalSince(session.lastSpeechDate) < speechHangoverSeconds
 
-            // Active Channel Selection & Decision:
-            // Prevents parallel track serialization (which diced audio into 42ms slices and doubled time)
-            let shouldAppendChunk: Bool
-            let targetTrackType: AudioSourceType
+            if !isChunkSpeech && !isWithinHangover {
+                // True silence on this channel: maintain 250ms pre-roll circular buffer
+                session.preRollBuffer.append(pcmData)
+                if session.preRollBuffer.count > session.maxPreRollBytes {
+                    session.preRollBuffer.removeFirst(session.preRollBuffer.count - session.maxPreRollBytes)
+                }
 
-            if micActive && !sysActive {
-                // Local microphone speech exclusively: drop system silence
-                shouldAppendChunk = isMic
-                targetTrackType = .microphone
-            } else if sysActive && !micActive {
-                // Remote participant speech exclusively: drop mic room noise
-                shouldAppendChunk = !isMic
-                targetTrackType = .systemAudio
-            } else if micActive && sysActive {
-                // Crosstalk: accept chunk from the dominant speaking channel
-                let dominantIsMic = (micEnergyAccumulator >= sysEnergyAccumulator)
-                shouldAppendChunk = (isMic == dominantIsMic)
-                targetTrackType = dominantIsMic ? .microphone : .systemAudio
-            } else {
-                // Silence on both channels: throttle silence buffers to at most one buffer per 100ms
-                // This keeps Apple Speech clock advancing in 1x real-time without 2x time dilation
-                targetTrackType = lastRoutedTrackType
-                if now.timeIntervalSince(lastSilenceAppendDate) >= 0.10 {
-                    lastSilenceAppendDate = now
-                    shouldAppendChunk = isMic // Pick one arbitrary channel to deliver real-time silence
-                } else {
-                    shouldAppendChunk = false
+                // If utterance was active and silence has exceeded the commit threshold, commit it
+                if session.currentRequest != nil && !session.lastEmittedText.isEmpty {
+                    let silenceDuration = now.timeIntervalSince(session.lastSpeechDate)
+                    if silenceDuration >= silenceCommitSeconds {
+                        self.commitAndRollover_locked(for: session)
+                    }
+                }
+                return
+            }
+
+            // Speech is active (or in an inter-word pause within hangover)
+            if session.currentRequest == nil {
+                let timeSinceError = now.timeIntervalSince(session.lastErrorTime)
+                guard timeSinceError >= 0.20 else { return }
+                self.spawnRecognitionTask_locked(for: session)
+
+                // Inject pre-roll buffer to preserve leading consonant phonemes on utterance onset
+                if let req = session.currentRequest, !session.preRollBuffer.isEmpty {
+                    let preRollSamples = session.preRollBuffer.count / MemoryLayout<Int16>.size
+                    if preRollSamples > 0 {
+                        self.appendPCMData(session.preRollBuffer, sampleCount: preRollSamples, to: req)
+                        session.utterancePCMData.append(session.preRollBuffer)
+                    }
+                    session.preRollBuffer = Data()
                 }
             }
 
-            guard shouldAppendChunk else { return }
-
-            // Conversational Turn Transition Detection:
-            // If the active speaking channel switched (e.g. You finished asking a question and Remote Speaker begins answering),
-            // commit the prior utterance immediately to pass the prompt to the AI copilot without waiting for timeouts!
-            if targetTrackType != lastRoutedTrackType && !lastEmittedText.isEmpty {
-                self.commitAndRollover_locked()
-            }
-            lastRoutedTrackType = targetTrackType
-
-            // Update speaker attribution & accumulate acoustic buffer
-            let micTrack = registeredTracks.values.first { $0.sourceType == .microphone }
-            let sysTrack = registeredTracks.values.first { $0.sourceType == .systemAudio }
-            if currentUtterancePCMData.count < Int(AudioCaptureService.sampleRate) * 2 * 4 {
-                currentUtterancePCMData.append(pcmData)
-            }
-
-            if targetTrackType == .microphone {
-                let userName = UserDefaults.standard.string(forKey: "sidebrief_user_name") ?? "You"
-                lastAttributedSpeaker = userName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "You" : userName
-                lastAttributedTrackId = micTrack?.id ?? trackId
-            } else {
-                lastAttributedTrackId = sysTrack?.id ?? trackId
-                if currentUtterancePCMData.count >= 3200 {
-                    lastAttributedSpeaker = SpeakerDiarizationService.shared.attributeSpeaker(
-                        meetingId: currentMeetingId,
-                        isMic: false,
-                        pcmData: currentUtterancePCMData,
-                        sampleRate: AudioCaptureService.sampleRate
-                    )
-                } else if lastAttributedSpeaker == "You" {
-                    lastAttributedSpeaker = "Speaker 1"
-                }
+            guard let req = session.currentRequest else { return }
+            self.appendPCMData(pcmData, sampleCount: sampleCount, to: req)
+            if session.utterancePCMData.count < session.maxUtteranceBytes {
+                session.utterancePCMData.append(pcmData)
             }
 
             // Apple SFSpeechRecognitionTask max recommended duration is ~45-60 seconds.
             // If the current task has been running > 45 seconds with active text, roll over smoothly.
-            let taskAge = now.timeIntervalSince(taskStartTime)
-            if taskAge > 45.0 && !lastEmittedText.isEmpty {
-                self.commitAndRollover_locked()
+            let taskAge = now.timeIntervalSince(session.taskStartTime)
+            if taskAge > 45.0 && !session.lastEmittedText.isEmpty {
+                self.commitAndRollover_locked(for: session)
             }
-
-            // Lazily spawn recognition task when audio arrives, with backoff throttle to prevent loops
-            if currentRequest == nil {
-                let timeSinceError = now.timeIntervalSince(lastErrorTime)
-                if timeSinceError >= 0.20 {
-                    self.spawnRecognitionTask_locked()
-                }
-            }
-
-            guard let req = currentRequest else { return }
-
-            // Build AVAudioPCMBuffer
-            let frameCount = AVAudioFrameCount(sampleCount)
-            guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: frameCount) else {
-                return
-            }
-            pcmBuffer.frameLength = frameCount
-
-            // Safe alignment-independent copy into audio buffer
-            pcmData.withUnsafeBytes { rawPtr in
-                if let baseAddress = rawPtr.baseAddress, let channelData = pcmBuffer.int16ChannelData {
-                    let copyByteCount = min(pcmData.count, Int(frameCount) * MemoryLayout<Int16>.size)
-                    memcpy(channelData[0], baseAddress, copyByteCount)
-                }
-            }
-
-            req.append(pcmBuffer)
         }
     }
 
     public func endSession(trackId: String) async throws {
         queue.sync {
-            _ = registeredTracks.removeValue(forKey: trackId)
-            guard registeredTracks.isEmpty else { return }
+            guard let session = sessions.removeValue(forKey: trackId) else { return }
+            session.silenceTimer?.cancel()
+            session.silenceTimer = nil
+            session.currentRequest?.endAudio()
+            session.currentTask?.finish()
 
-            silenceTimer?.cancel()
-            silenceTimer = nil
-            isClosing = true
-            currentRequest?.endAudio()
-            currentTask?.finish()
-
-            // If there was any trailing uncommitted text, commit it now
-            let text = lastEmittedText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = session.lastEmittedText.trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty {
-                let isMicDominant = (lastRoutedTrackType == .microphone)
-                let micTrack = registeredTracks.values.first { $0.sourceType == .microphone }
-                let sysTrack = registeredTracks.values.first { $0.sourceType == .systemAudio }
-                let speaker = SpeakerDiarizationService.shared.attributeSpeaker(
-                    meetingId: currentMeetingId,
-                    isMic: isMicDominant,
-                    pcmData: currentUtterancePCMData,
-                    sampleRate: AudioCaptureService.sampleRate
-                )
-                let targetTrackId = isMicDominant ? (micTrack?.id ?? lastAttributedTrackId) : (sysTrack?.id ?? lastAttributedTrackId)
-                let resolvedTrackId = targetTrackId.isEmpty ? trackId : targetTrackId
+                let durationSec = Double(max(500, session.latestOffsetMs - session.segmentStartOffsetMs)) / 1000.0
+                let speaker: String
+                if session.isMic {
+                    let userName = UserDefaults.standard.string(forKey: "sidebrief_user_name") ?? "You"
+                    speaker = userName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "You" : userName
+                } else {
+                    speaker = SpeakerDiarizationService.shared.attributeSpeaker(
+                        meetingId: session.meetingId,
+                        isMic: false,
+                        pcmData: session.utterancePCMData,
+                        sampleRate: AudioCaptureService.sampleRate,
+                        segmentDurationSeconds: durationSec,
+                        isFinal: true
+                    )
+                }
 
                 let segment = TranscriptSegment(
-                    id: currentSegmentId,
-                    meetingId: currentMeetingId,
-                    trackId: resolvedTrackId,
-                    providerSegmentId: currentSegmentId,
+                    id: session.currentSegmentId,
+                    meetingId: session.meetingId,
+                    trackId: session.trackId,
+                    providerSegmentId: session.currentSegmentId,
                     speakerLabel: speaker,
                     text: text,
-                    startOffsetMs: segmentStartOffsetMs,
-                    endOffsetMs: max(segmentStartOffsetMs + 500, latestOffsetMs),
+                    startOffsetMs: session.segmentStartOffsetMs,
+                    endOffsetMs: max(session.segmentStartOffsetMs + 500, session.latestOffsetMs),
                     isProvisional: false
                 )
                 self.continuation.yield(.committed(segment: segment))
             }
 
-            currentRequest = nil
-            currentTask = nil
+            session.currentRequest = nil
+            session.currentTask = nil
+
+            if sessions.isEmpty {
+                isClosing = true
+            }
         }
 
         continuation.yield(.closed(trackId: trackId))
@@ -296,7 +257,7 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
 
     // MARK: - Private Task Management
 
-    private func spawnRecognitionTask_locked() {
+    private func spawnRecognitionTask_locked(for session: TrackSession) {
         guard !isClosing, let rec = recognizer, rec.isAvailable else { return }
 
         let request = SFSpeechAudioBufferRecognitionRequest()
@@ -308,128 +269,161 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
             request.requiresOnDeviceRecognition = true
         }
 
-        // Inject custom vocabulary if provided
+        // Automatic punctuation & casing dramatically improves LLM comprehension
+        if #available(macOS 13.0, *) {
+            request.addsPunctuation = true
+        }
+
+        // Inject custom space vocabulary
         if !contextualStrings.isEmpty {
             request.contextualStrings = contextualStrings
         }
 
         let taskId = UUID()
-        currentTaskId = taskId
-        currentRequest = request
-        taskStartTime = Date()
+        session.currentTaskId = taskId
+        session.currentRequest = request
+        session.taskStartTime = Date()
+        session.segmentStartOffsetMs = session.latestOffsetMs
 
-        let task = rec.recognitionTask(with: request) { [weak self] result, error in
-            guard let self = self else { return }
-            self.handleRecognitionCallback(taskId: taskId, result: result, error: error)
+        let task = rec.recognitionTask(with: request) { [weak self, weak session] result, error in
+            guard let self = self, let session = session else { return }
+            self.handleRecognitionCallback(session: session, taskId: taskId, result: result, error: error)
         }
 
-        currentTask = task
+        session.currentTask = task
     }
 
-    private func commitAndRollover_locked() {
-        silenceTimer?.cancel()
-        silenceTimer = nil
+    private func appendPCMData(_ data: Data, sampleCount: Int, to request: SFSpeechAudioBufferRecognitionRequest) {
+        let frameCount = AVAudioFrameCount(sampleCount)
+        guard frameCount > 0, let pcmBuffer = AVAudioPCMBuffer(pcmFormat: audioFormat, frameCapacity: frameCount) else {
+            return
+        }
+        pcmBuffer.frameLength = frameCount
+        data.withUnsafeBytes { rawPtr in
+            if let baseAddress = rawPtr.baseAddress, let channelData = pcmBuffer.int16ChannelData {
+                let copyByteCount = min(data.count, Int(frameCount) * MemoryLayout<Int16>.size)
+                memcpy(channelData[0], baseAddress, copyByteCount)
+            }
+        }
+        request.append(pcmBuffer)
+    }
 
-        let text = lastEmittedText.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func commitAndRollover_locked(for session: TrackSession) {
+        session.silenceTimer?.cancel()
+        session.silenceTimer = nil
+
+        let text = session.lastEmittedText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.isEmpty {
-            let isMicDominant = (lastRoutedTrackType == .microphone)
-            let micTrack = registeredTracks.values.first { $0.sourceType == .microphone }
-            let sysTrack = registeredTracks.values.first { $0.sourceType == .systemAudio }
-            let speaker = SpeakerDiarizationService.shared.attributeSpeaker(
-                meetingId: currentMeetingId,
-                isMic: isMicDominant,
-                pcmData: currentUtterancePCMData,
-                sampleRate: AudioCaptureService.sampleRate
-            )
-            let targetTrackId = isMicDominant ? (micTrack?.id ?? lastAttributedTrackId) : (sysTrack?.id ?? lastAttributedTrackId)
-            let resolvedTrackId = targetTrackId.isEmpty ? (registeredTracks.keys.first ?? "audio") : targetTrackId
+            let durationSec = Double(max(500, session.latestOffsetMs - session.segmentStartOffsetMs)) / 1000.0
+            let speaker: String
+            if session.isMic {
+                let userName = UserDefaults.standard.string(forKey: "sidebrief_user_name") ?? "You"
+                speaker = userName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "You" : userName
+            } else {
+                speaker = SpeakerDiarizationService.shared.attributeSpeaker(
+                    meetingId: session.meetingId,
+                    isMic: false,
+                    pcmData: session.utterancePCMData,
+                    sampleRate: AudioCaptureService.sampleRate,
+                    segmentDurationSeconds: durationSec,
+                    isFinal: true
+                )
+            }
 
             let segment = TranscriptSegment(
-                id: currentSegmentId,
-                meetingId: currentMeetingId,
-                trackId: resolvedTrackId,
-                providerSegmentId: currentSegmentId,
+                id: session.currentSegmentId,
+                meetingId: session.meetingId,
+                trackId: session.trackId,
+                providerSegmentId: session.currentSegmentId,
                 speakerLabel: speaker,
                 text: text,
-                startOffsetMs: segmentStartOffsetMs,
-                endOffsetMs: max(segmentStartOffsetMs + 500, latestOffsetMs),
+                startOffsetMs: session.segmentStartOffsetMs,
+                endOffsetMs: max(session.segmentStartOffsetMs + 500, session.latestOffsetMs),
                 isProvisional: false
             )
             continuation.yield(.committed(segment: segment))
         }
 
-        // Reset utterance buffer & energy
-        currentUtterancePCMData = Data()
+        session.utterancePCMData = Data()
+        session.currentRequest?.endAudio()
+        session.currentTask?.finish()
 
-        // Reset utterance energy
-        micEnergyAccumulator = 0
-        sysEnergyAccumulator = 0
-
-        // Close old request cleanly
-        currentRequest?.endAudio()
-        currentTask?.finish()
-
-        // Roll to new utterance segment and invalidate old taskId
-        currentSegmentId = UUID().uuidString
-        segmentStartOffsetMs = latestOffsetMs
-        lastEmittedText = ""
-        currentRequest = nil
-        currentTask = nil
-        currentTaskId = UUID()
+        session.currentSegmentId = UUID().uuidString
+        session.segmentStartOffsetMs = session.latestOffsetMs
+        session.lastEmittedText = ""
+        session.currentRequest = nil
+        session.currentTask = nil
+        session.currentTaskId = UUID()
     }
 
-    private func handleRecognitionCallback(taskId: UUID, result: SFSpeechRecognitionResult?, error: Error?) {
+    private func handleRecognitionCallback(session: TrackSession, taskId: UUID, result: SFSpeechRecognitionResult?, error: Error?) {
         var shouldCommit = false
         var segmentToEmit: TranscriptSegment?
 
         queue.sync {
             // Drop callbacks from superseded tasks so terminating tasks cannot emit duplicate transcripts
-            guard !isClosing, currentTaskId == taskId else { return }
+            guard !isClosing, session.currentTaskId == taskId else { return }
 
             if let result = result {
                 let transcription = result.bestTranscription.formattedString.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !transcription.isEmpty else { return }
 
-                lastEmittedText = transcription
-                let speaker = lastAttributedSpeaker
-                let resolvedTrackId = lastAttributedTrackId
+                session.lastEmittedText = transcription
+
+                let speaker: String
+                if session.isMic {
+                    let userName = UserDefaults.standard.string(forKey: "sidebrief_user_name") ?? "You"
+                    speaker = userName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "You" : userName
+                } else {
+                    if session.utterancePCMData.count >= 3200 {
+                        speaker = SpeakerDiarizationService.shared.attributeSpeaker(
+                            meetingId: session.meetingId,
+                            isMic: false,
+                            pcmData: session.utterancePCMData,
+                            sampleRate: AudioCaptureService.sampleRate,
+                            isFinal: result.isFinal
+                        )
+                    } else {
+                        speaker = "Speaker 1"
+                    }
+                }
 
                 if result.isFinal {
-                    silenceTimer?.cancel()
-                    silenceTimer = nil
+                    session.silenceTimer?.cancel()
+                    session.silenceTimer = nil
                     shouldCommit = true
+
                     let seg = TranscriptSegment(
-                        id: currentSegmentId,
-                        meetingId: currentMeetingId,
-                        trackId: resolvedTrackId,
-                        providerSegmentId: currentSegmentId,
+                        id: session.currentSegmentId,
+                        meetingId: session.meetingId,
+                        trackId: session.trackId,
+                        providerSegmentId: session.currentSegmentId,
                         speakerLabel: speaker,
                         text: transcription,
-                        startOffsetMs: segmentStartOffsetMs,
-                        endOffsetMs: max(segmentStartOffsetMs + 500, latestOffsetMs),
+                        startOffsetMs: session.segmentStartOffsetMs,
+                        endOffsetMs: max(session.segmentStartOffsetMs + 500, session.latestOffsetMs),
                         isProvisional: false
                     )
                     segmentToEmit = seg
 
                     // Advance segment and cycle task ID
-                    currentSegmentId = UUID().uuidString
-                    segmentStartOffsetMs = latestOffsetMs
-                    lastEmittedText = ""
-                    currentTaskId = UUID()
-                    currentRequest = nil
-                    currentTask = nil
-                    micEnergyAccumulator = 0
-                    sysEnergyAccumulator = 0
+                    session.currentSegmentId = UUID().uuidString
+                    session.segmentStartOffsetMs = session.latestOffsetMs
+                    session.lastEmittedText = ""
+                    session.currentTaskId = UUID()
+                    session.currentRequest = nil
+                    session.currentTask = nil
+                    session.utterancePCMData = Data()
                 } else {
                     let seg = TranscriptSegment(
-                        id: currentSegmentId,
-                        meetingId: currentMeetingId,
-                        trackId: resolvedTrackId,
-                        providerSegmentId: currentSegmentId,
+                        id: session.currentSegmentId,
+                        meetingId: session.meetingId,
+                        trackId: session.trackId,
+                        providerSegmentId: session.currentSegmentId,
                         speakerLabel: speaker,
                         text: transcription,
-                        startOffsetMs: segmentStartOffsetMs,
-                        endOffsetMs: max(segmentStartOffsetMs + 500, latestOffsetMs),
+                        startOffsetMs: session.segmentStartOffsetMs,
+                        endOffsetMs: max(session.segmentStartOffsetMs + 500, session.latestOffsetMs),
                         isProvisional: true
                     )
                     segmentToEmit = seg
@@ -437,38 +431,38 @@ public final class AppleSpeechTranscriptionAdapter: NSObject, TranscriptionServi
                     // Auto-commit on 1.2s conversational pause/silence so the assistant immediately produces suggestions
                     let currentCapturedText = transcription
                     let capturedTaskId = taskId
-                    silenceTimer?.cancel()
-                    silenceTimer = Task { [weak self] in
+                    session.silenceTimer?.cancel()
+                    session.silenceTimer = Task { [weak self, weak session] in
                         try? await Task.sleep(nanoseconds: 1_200_000_000)
-                        guard !Task.isCancelled, let self = self else { return }
+                        guard !Task.isCancelled, let self = self, let session = session else { return }
                         self.queue.sync {
                             guard !self.isClosing,
-                                  self.currentTaskId == capturedTaskId,
-                                  self.lastEmittedText == currentCapturedText,
+                                  session.currentTaskId == capturedTaskId,
+                                  session.lastEmittedText == currentCapturedText,
                                   !currentCapturedText.isEmpty else { return }
-                            self.commitAndRollover_locked()
+                            self.commitAndRollover_locked(for: session)
                         }
                     }
                 }
             } else if let error = error as NSError?, !isClosing {
-                lastErrorTime = Date()
+                session.lastErrorTime = Date()
                 if error.code == 209 {
                     // Normal audio buffer completion
                     return
                 } else if error.code == 1110 {
                     // No speech detected during interval: clean up request so next incoming speech chunk spawns cleanly
-                    currentRequest = nil
-                    currentTask = nil
+                    session.currentRequest = nil
+                    session.currentTask = nil
                 } else if error.code == 203 || error.code == 216 {
                     // Timeout or cancelled: commit any captured text, or clean up request
-                    if !lastEmittedText.isEmpty {
-                        self.commitAndRollover_locked()
+                    if !session.lastEmittedText.isEmpty {
+                        self.commitAndRollover_locked(for: session)
                     } else {
-                        currentRequest = nil
-                        currentTask = nil
+                        session.currentRequest = nil
+                        session.currentTask = nil
                     }
                 } else {
-                    continuation.yield(.error(trackId: lastAttributedTrackId, message: error.localizedDescription))
+                    continuation.yield(.error(trackId: session.trackId, message: error.localizedDescription))
                 }
             }
         }

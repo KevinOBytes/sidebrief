@@ -39,6 +39,10 @@ public final class AudioPlaybackEngine: @unchecked Sendable {
     private var micChunks: [AudioChunk] = []
     private var systemChunks: [AudioChunk] = []
     private var currentPositionMs: Int64 = 0
+    private var totalDurationMs: Int64 = 0
+
+    private var masterAudioFile: AVAudioFile?
+    private var masterAudioURL: URL?
 
     private var timer: Timer?
     private let lock = NSLock()
@@ -54,10 +58,12 @@ public final class AudioPlaybackEngine: @unchecked Sendable {
         audioEngine.connect(mixerNode, to: audioEngine.mainMixerNode, format: format)
     }
 
+    /// Load a meeting for playback, configuring master audio or individual chunks.
     public func loadMeeting(
         meetingId: String,
-        micChunks: [AudioChunk],
-        systemChunks: [AudioChunk]
+        micChunks: [AudioChunk] = [],
+        systemChunks: [AudioChunk] = [],
+        masterAudioURL: URL? = nil
     ) {
         lock.lock()
         defer { lock.unlock() }
@@ -66,6 +72,25 @@ public final class AudioPlaybackEngine: @unchecked Sendable {
         self.micChunks = micChunks.sorted(by: { $0.startOffsetMs < $1.startOffsetMs })
         self.systemChunks = systemChunks.sorted(by: { $0.startOffsetMs < $1.startOffsetMs })
         self.currentPositionMs = 0
+
+        // Reset player nodes
+        micPlayerNode.stop()
+        systemPlayerNode.stop()
+        state = .stopped
+
+        let candidateURL = masterAudioURL ?? FullAudioRecordingStore.shared.recordingURL(for: meetingId)
+        if FileManager.default.fileExists(atPath: candidateURL.path),
+           let file = try? AVAudioFile(forReading: candidateURL) {
+            self.masterAudioURL = candidateURL
+            self.masterAudioFile = file
+            let durationSeconds = Double(file.length) / file.fileFormat.sampleRate
+            self.totalDurationMs = Int64(durationSeconds * 1000.0)
+        } else {
+            self.masterAudioURL = nil
+            self.masterAudioFile = nil
+            let all = micChunks + systemChunks
+            self.totalDurationMs = all.map { $0.endOffsetMs }.max() ?? 0
+        }
     }
 
     /// Plays audio from the current position or resumes if paused.
@@ -79,8 +104,27 @@ public final class AudioPlaybackEngine: @unchecked Sendable {
             try audioEngine.start()
         }
 
-        micPlayerNode.play()
-        systemPlayerNode.play()
+        if let audioFile = masterAudioFile {
+            if state == .stopped {
+                systemPlayerNode.stop()
+                systemPlayerNode.scheduleFile(audioFile, at: nil) { [weak self] in
+                    guard let self = self else { return }
+                    DispatchQueue.main.async {
+                        if self.state == .playing {
+                            self.stop()
+                        }
+                    }
+                }
+            }
+            systemPlayerNode.play()
+        } else {
+            if state == .stopped {
+                scheduleChunksFromOffset(currentPositionMs)
+            }
+            micPlayerNode.play()
+            systemPlayerNode.play()
+        }
+
         state = .playing
 
         DispatchQueue.main.async {
@@ -130,47 +174,83 @@ public final class AudioPlaybackEngine: @unchecked Sendable {
         micPlayerNode.stop()
         systemPlayerNode.stop()
 
-        currentPositionMs = offsetMs
+        currentPositionMs = max(0, offsetMs)
 
-        // Find relevant chunks around offsetMs and schedule them
-        guard let meetingId = meetingId else { return }
-        let key = try AudioKeychainManager.shared.getOrCreateKey(for: meetingId)
-
-        // Schedule mic chunks
-        for chunk in micChunks where chunk.endOffsetMs > offsetMs {
-            if let wavData = try? EncryptedChunkWriter.decryptChunk(chunk: chunk, key: key) {
-                scheduleWavData(wavData, on: micPlayerNode)
+        if let audioFile = masterAudioFile {
+            let sampleRate = audioFile.fileFormat.sampleRate
+            let startFrame = AVAudioFramePosition(Double(currentPositionMs) / 1000.0 * sampleRate)
+            if startFrame < audioFile.length {
+                let frameCount = AVAudioFrameCount(audioFile.length - startFrame)
+                systemPlayerNode.scheduleSegment(audioFile, startingFrame: startFrame, frameCount: frameCount, at: nil) { [weak self] in
+                    guard let self = self else { return }
+                    DispatchQueue.main.async {
+                        if self.state == .playing {
+                            self.stop()
+                        }
+                    }
+                }
             }
-        }
-
-        // Schedule system chunks
-        for chunk in systemChunks where chunk.endOffsetMs > offsetMs {
-            if let wavData = try? EncryptedChunkWriter.decryptChunk(chunk: chunk, key: key) {
-                scheduleWavData(wavData, on: systemPlayerNode)
-            }
+        } else {
+            scheduleChunksFromOffset(currentPositionMs)
         }
 
         if wasPlaying {
             if !audioEngine.isRunning {
                 try audioEngine.start()
             }
-            micPlayerNode.play()
-            systemPlayerNode.play()
+            if masterAudioFile != nil {
+                systemPlayerNode.play()
+            } else {
+                micPlayerNode.play()
+                systemPlayerNode.play()
+            }
             state = .playing
         }
 
         DispatchQueue.main.async {
-            self.delegate?.audioPlaybackEngine(self, didUpdateOffsetMs: offsetMs)
+            self.delegate?.audioPlaybackEngine(self, didUpdateOffsetMs: self.currentPositionMs)
         }
     }
 
-    private func scheduleWavData(_ data: Data, on node: AVAudioPlayerNode) {
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
-        try? data.write(to: tempURL)
-        defer { try? FileManager.default.removeItem(at: tempURL) }
+    // MARK: - Private Helpers
 
-        guard let file = try? AVAudioFile(forReading: tempURL) else { return }
-        node.scheduleFile(file, at: nil)
+    private func scheduleChunksFromOffset(_ offsetMs: Int64) {
+        guard let mId = meetingId, let key = try? AudioKeychainManager.shared.getOrCreateKey(for: mId) else { return }
+
+        // Schedule mic chunks
+        for chunk in micChunks where chunk.endOffsetMs > offsetMs {
+            if let wavData = try? EncryptedChunkWriter.decryptChunk(chunk: chunk, key: key) {
+                scheduleWavDataInMemory(wavData, on: micPlayerNode)
+            }
+        }
+
+        // Schedule system chunks
+        for chunk in systemChunks where chunk.endOffsetMs > offsetMs {
+            if let wavData = try? EncryptedChunkWriter.decryptChunk(chunk: chunk, key: key) {
+                scheduleWavDataInMemory(wavData, on: systemPlayerNode)
+            }
+        }
+    }
+
+    private func scheduleWavDataInMemory(_ data: Data, on node: AVAudioPlayerNode) {
+        guard data.count > 44 else { return }
+        let pcmData = data.subdata(in: 44..<data.count)
+        let sampleCount = pcmData.count / 2
+        guard sampleCount > 0 else { return }
+
+        guard let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 48000.0, channels: 1, interleaved: true),
+              let pcmBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(sampleCount)) else {
+            return
+        }
+        pcmBuffer.frameLength = AVAudioFrameCount(sampleCount)
+
+        pcmData.withUnsafeBytes { rawPtr in
+            if let base = rawPtr.baseAddress, let channelData = pcmBuffer.int16ChannelData {
+                memcpy(channelData[0], base, pcmData.count)
+            }
+        }
+
+        node.scheduleBuffer(pcmBuffer, at: nil)
     }
 
     private func startProgressTimer() {
@@ -178,7 +258,11 @@ public final class AudioPlaybackEngine: @unchecked Sendable {
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self, self.state == .playing else { return }
             self.currentPositionMs += 100
-            self.delegate?.audioPlaybackEngine(self, didUpdateOffsetMs: self.currentPositionMs)
+            if self.totalDurationMs > 0 && self.currentPositionMs >= self.totalDurationMs {
+                self.stop()
+            } else {
+                self.delegate?.audioPlaybackEngine(self, didUpdateOffsetMs: self.currentPositionMs)
+            }
         }
     }
 

@@ -460,22 +460,46 @@ public struct SidebriefApp: App {
         saveTextFile(content: md, filename: "\(meeting.title).md")
     }
 
+    private func exportMeetingAsPDF() {
+        guard let meeting = coordinator.selectedPastMeeting ?? coordinator.pastMeetings.first else { return }
+        guard let pdfData = MeetingExportService.shared.generatePDFData(
+            meeting: meeting,
+            segments: coordinator.pastMeetingSegments,
+            summary: coordinator.pastMeetingSummary
+        ) else { return }
+        MeetingExportService.shared.exportWithSavePanel(
+            filename: meeting.title.isEmpty ? "Meeting_Transcript" : meeting.title,
+            fileExtension: "pdf",
+            data: pdfData
+        )
+    }
+
+    private func exportMeetingAsPlainText() {
+        guard let meeting = coordinator.selectedPastMeeting ?? coordinator.pastMeetings.first else { return }
+        let txt = MeetingExportService.shared.generatePlainText(
+            meeting: meeting,
+            segments: coordinator.pastMeetingSegments,
+            summary: coordinator.pastMeetingSummary
+        )
+        MeetingExportService.shared.exportWithSavePanel(
+            filename: meeting.title.isEmpty ? "Meeting_Transcript" : meeting.title,
+            fileExtension: "txt",
+            textContent: txt
+        )
+    }
+
     private func exportMeetingAsJSON() {
         guard let meeting = coordinator.selectedPastMeeting ?? coordinator.pastMeetings.first else { return }
-        let payload: [String: Any] = [
-            "id": meeting.id,
-            "title": meeting.title,
-            "createdAt": meeting.createdAt.ISO8601Format(),
-            "transcript": coordinator.pastMeetingSegments.map { [
-                "speaker": $0.speakerLabel,
-                "text": $0.text,
-                "startOffsetMs": $0.startOffsetMs,
-                "endOffsetMs": $0.endOffsetMs
-            ]}
-        ]
-        if let data = try? JSONSerialization.data(withJSONObject: payload, options: .prettyPrinted),
-           let jsonStr = String(data: data, encoding: .utf8) {
-            saveTextFile(content: jsonStr, filename: "\(meeting.title).json")
+        if let data = MeetingExportService.shared.generateJSONData(
+            meeting: meeting,
+            segments: coordinator.pastMeetingSegments,
+            summary: coordinator.pastMeetingSummary
+        ) {
+            MeetingExportService.shared.exportWithSavePanel(
+                filename: meeting.title.isEmpty ? "Meeting_Transcript" : meeting.title,
+                fileExtension: "json",
+                data: data
+            )
         }
     }
 

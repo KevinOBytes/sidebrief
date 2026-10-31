@@ -124,6 +124,21 @@ public final class WhisperTranscriptionAdapter: TranscriptionServiceProtocol, @u
 
         guard !pcmData.isEmpty else { return }
 
+        // Noise floor gate: skip sending silent audio to Whisper, which causes hallucinated repetitive text
+        let sampleCount = pcmData.count / MemoryLayout<Int16>.size
+        guard sampleCount > 0 else { return }
+        var sumSquares: Double = 0
+        pcmData.withUnsafeBytes { rawPtr in
+            if let base = rawPtr.baseAddress?.assumingMemoryBound(to: Int16.self) {
+                for i in 0..<sampleCount {
+                    let s = Double(base[i])
+                    sumSquares += s * s
+                }
+            }
+        }
+        let chunkRMS = sqrt(sumSquares / Double(sampleCount))
+        guard chunkRMS >= 20.0 else { return }
+
         let wavData = Self.createWavData(fromPCM16: pcmData, sampleRate: Int(track.sampleRate), channels: track.channelCount)
 
         guard let url = URL(string: endpoint) else { return }

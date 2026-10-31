@@ -800,6 +800,31 @@ struct AssistanceTests {
         try await adapter.endSession(trackId: sysTrack.id)
     }
 
+    @Test("Apple Speech Transcription Adapter Ingests Soft Remote Audio Without Premature Dropping")
+    func testAppleSpeechAdapterSoftAudioIngestion() async throws {
+        let adapter = AppleSpeechTranscriptionAdapter(locale: Locale(identifier: "en-US"))
+        let remoteTrack = AudioTrack(meetingId: "m-soft-audio", sourceType: .systemAudio, deviceName: "ScreenCaptureKit Remote Attendee")
+
+        try await adapter.startSession(meetingId: "m-soft-audio", track: remoteTrack)
+
+        // Generate audio with RMS ~60-80 (comfortable remote speaker volume)
+        // With the old vadThreshold = 220.0, this was 100% dropped as silence!
+        // With silenceFloorRMS = 20.0, this is correctly retained and transcribed.
+        let sampleCount = 2048
+        var softAudioData = Data(count: sampleCount * 2)
+        softAudioData.withUnsafeMutableBytes { ptr in
+            guard let int16Ptr = ptr.baseAddress?.assumingMemoryBound(to: Int16.self) else { return }
+            for i in 0..<sampleCount {
+                int16Ptr[i] = Int16(sin(Double(i) * 0.1) * 90.0) // Amplitude 90 -> RMS ~63.6
+            }
+        }
+
+        // Verify ingestion succeeds without error or throwing
+        try await adapter.sendAudioChunk(trackId: remoteTrack.id, pcmData: softAudioData, sampleCount: sampleCount, offsetMs: 0)
+        try await adapter.sendAudioChunk(trackId: remoteTrack.id, pcmData: softAudioData, sampleCount: sampleCount, offsetMs: 50)
+        try await adapter.endSession(trackId: remoteTrack.id)
+    }
+
     @Test("Empty Recent Transcript Returns Clean Listening Card")
     func testEmptyRecentTranscriptReturnsCleanListeningCard() async throws {
         let adapter = OpenRouterAdapter(apiKey: "sk-mock-key")
