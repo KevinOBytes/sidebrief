@@ -73,6 +73,7 @@ public struct Meeting: Identifiable, Codable, Sendable {
     public var totalPromptTokens: Int
     public var totalCompletionTokens: Int
     public var estimatedCostUSD: Double
+    public var masterAudioPath: String?
     public var createdAt: Date
     public var updatedAt: Date
 
@@ -90,6 +91,7 @@ public struct Meeting: Identifiable, Codable, Sendable {
         totalPromptTokens: Int = 0,
         totalCompletionTokens: Int = 0,
         estimatedCostUSD: Double = 0.0,
+        masterAudioPath: String? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -106,6 +108,7 @@ public struct Meeting: Identifiable, Codable, Sendable {
         self.totalPromptTokens = totalPromptTokens
         self.totalCompletionTokens = totalCompletionTokens
         self.estimatedCostUSD = estimatedCostUSD
+        self.masterAudioPath = masterAudioPath
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -235,7 +238,7 @@ public struct TranscriptSegment: Identifiable, Codable, Sendable, Hashable {
         id: String = UUID().uuidString,
         meetingId: String,
         trackId: String,
-        providerSegmentId: String,
+        providerSegmentId: String = UUID().uuidString,
         speakerLabel: String,
         text: String,
         startOffsetMs: Int64,

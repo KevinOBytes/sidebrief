@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 import CryptoKit
+import AVFoundation
 @testable import SidebriefCore
 
 @Suite("Audio Engine & Encryption Tests")
@@ -355,5 +356,263 @@ struct AudioEngineTests {
         #expect(updatedUnique.contains("Alex Vance"))
         #expect(updatedUnique.contains("Elena Rostova"))
         #expect(!updatedUnique.contains("Speaker 1 (Male)"))
+    }
+
+    @Test("Speaker Diarization Provisional Attribution Does Not Inflate Total Seconds")
+    func testSpeakerDurationAccurateNotInflated() {
+        let diarization = SpeakerDiarizationService.shared
+        let meetingId = "test-duration-\(UUID().uuidString)"
+
+        // 130 Hz tone (Male pitch) for 0.2 seconds = 9600 samples
+        let sampleRate = 48000.0
+        let sampleCount = 9600
+        var malePCM = Data(count: sampleCount * 2)
+        malePCM.withUnsafeMutableBytes { ptr in
+            let samples = ptr.bindMemory(to: Int16.self).baseAddress!
+            for i in 0..<sampleCount {
+                let t = Double(i) / sampleRate
+                samples[i] = Int16(sin(2.0 * .pi * 130.0 * t) * 16000.0)
+            }
+        }
+
+        // Simulate 10 streaming chunk arrivals with isFinal: false
+        for _ in 0..<10 {
+            let label = diarization.attributeSpeaker(
+                meetingId: meetingId,
+                isMic: false,
+                pcmData: malePCM,
+                sampleRate: sampleRate,
+                isFinal: false
+            )
+            #expect(!label.isEmpty)
+        }
+
+        // Before any final commit, clusters should not have inflated counts or durations
+        let provisionalSpeakers = diarization.getSessionSpeakers(meetingId: meetingId)
+        let totalProvisionalDuration = provisionalSpeakers.reduce(0.0) { $0 + $1.totalDurationSeconds }
+        let totalProvisionalSegments = provisionalSpeakers.reduce(0) { $0 + $1.segmentCount }
+        #expect(totalProvisionalDuration == 0.0)
+        #expect(totalProvisionalSegments == 0)
+
+        // Now finalize one segment with exact duration: 3.5 seconds
+        let finalLabel = diarization.attributeSpeaker(
+            meetingId: meetingId,
+            isMic: false,
+            pcmData: malePCM,
+            sampleRate: sampleRate,
+            segmentDurationSeconds: 3.5,
+            isFinal: true
+        )
+        #expect(!finalLabel.isEmpty)
+
+        let committedSpeakers = diarization.getSessionSpeakers(meetingId: meetingId)
+        #expect(committedSpeakers.count == 1)
+        let speaker = committedSpeakers[0]
+        #expect(speaker.segmentCount == 1)
+        #expect(abs(speaker.totalDurationSeconds - 3.5) < 0.001)
+
+        // Commit a second segment of 2.2 seconds
+        _ = diarization.attributeSpeaker(
+            meetingId: meetingId,
+            isMic: false,
+            pcmData: malePCM,
+            sampleRate: sampleRate,
+            segmentDurationSeconds: 2.2,
+            isFinal: true
+        )
+
+        let afterSecondCommit = diarization.getSessionSpeakers(meetingId: meetingId)
+        #expect(afterSecondCommit[0].segmentCount == 2)
+        #expect(abs(afterSecondCommit[0].totalDurationSeconds - 5.7) < 0.001)
+
+        diarization.endMeeting(meetingId: meetingId)
+    }
+
+    @Test("Speaker Voice Sample Quality Upgrade on Clear Voiced Speech")
+    func testVoiceSampleQualityUpgrade() {
+        let diarization = SpeakerDiarizationService.shared
+        let meetingId = "test-sample-upgrade-\(UUID().uuidString)"
+        let sampleRate = 48000.0
+
+        // Short, weak signal (0.15 seconds = 7200 samples)
+        let shortCount = 7200
+        var weakPCM = Data(count: shortCount * 2)
+        weakPCM.withUnsafeMutableBytes { ptr in
+            let samples = ptr.bindMemory(to: Int16.self).baseAddress!
+            for i in 0..<shortCount {
+                let t = Double(i) / sampleRate
+                samples[i] = Int16(sin(2.0 * .pi * 210.0 * t) * 4000.0) // quiet female tone
+            }
+        }
+
+        // Commit first weak segment
+        _ = diarization.attributeSpeaker(
+            meetingId: meetingId,
+            isMic: false,
+            pcmData: weakPCM,
+            sampleRate: sampleRate,
+            segmentDurationSeconds: 0.15,
+            isFinal: true
+        )
+
+        let speakers1 = diarization.getSessionSpeakers(meetingId: meetingId)
+        #expect(speakers1.count == 1)
+        let initialSampleLength = speakers1[0].voiceSampleWavData?.count ?? 0
+
+        // Now provide high-energy, 2.5-second clear voiced speech (120,000 samples)
+        let longCount = 120000
+        var clearPCM = Data(count: longCount * 2)
+        clearPCM.withUnsafeMutableBytes { ptr in
+            let samples = ptr.bindMemory(to: Int16.self).baseAddress!
+            for i in 0..<longCount {
+                let t = Double(i) / sampleRate
+                samples[i] = Int16(sin(2.0 * .pi * 210.0 * t) * 20000.0) // loud clear female tone
+            }
+        }
+
+        _ = diarization.attributeSpeaker(
+            meetingId: meetingId,
+            isMic: false,
+            pcmData: clearPCM,
+            sampleRate: sampleRate,
+            segmentDurationSeconds: 2.5,
+            isFinal: true
+        )
+
+        let speakers2 = diarization.getSessionSpeakers(meetingId: meetingId)
+        #expect(speakers2.count == 1)
+        let upgradedSample = speakers2[0].voiceSampleWavData
+        #expect(upgradedSample != nil)
+        let upgradedSampleLength = upgradedSample?.count ?? 0
+        // Upgraded sample should be larger, containing full 2.5s voiced audio
+        #expect(upgradedSampleLength > initialSampleLength)
+
+        diarization.endMeeting(meetingId: meetingId)
+    }
+
+    @Test("FullAudioRecordingStore Consolidates Multi-Track Encrypted Chunks into Master Stereo WAV")
+    func testFullAudioRecordingStoreConsolidation() async throws {
+        let meetingId = "test-consolidation-\(UUID().uuidString)"
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let tempRecordingsDir = tempDir.appendingPathComponent("Recordings", isDirectory: true)
+
+        let store = FullAudioRecordingStore(customRecordingsDirectory: tempRecordingsDir)
+
+        // 1. Create a mic chunk (440Hz tone, 1 sec)
+        let micWriter = try EncryptedChunkWriter(
+            meetingId: meetingId,
+            trackId: "track-mic-1",
+            journalDirectory: tempDir,
+            sampleRate: 48000.0,
+            channelCount: 1,
+            chunkDurationSeconds: 1.0
+        )
+        let sampleRate = 48000.0
+        var micPCM = Data(count: 48000 * 2)
+        micPCM.withUnsafeMutableBytes { ptr in
+            let s = ptr.bindMemory(to: Int16.self).baseAddress!
+            for i in 0..<48000 {
+                let t = Double(i) / sampleRate
+                s[i] = Int16(sin(2.0 * .pi * 440.0 * t) * 16000.0)
+            }
+        }
+        let micChunk = try await micWriter.appendAudioData(micPCM, sampleCount: 48000)!
+
+        // 2. Create a system chunk (880Hz tone, 1 sec starting at offset 1000ms)
+        let sysWriter = try EncryptedChunkWriter(
+            meetingId: meetingId,
+            trackId: "track-sys-1",
+            journalDirectory: tempDir,
+            sampleRate: 48000.0,
+            channelCount: 1,
+            chunkDurationSeconds: 1.0,
+            streamEpoch: micChunk.streamEpoch + 1000
+        )
+        var sysPCM = Data(count: 48000 * 2)
+        sysPCM.withUnsafeMutableBytes { ptr in
+            let s = ptr.bindMemory(to: Int16.self).baseAddress!
+            for i in 0..<48000 {
+                let t = Double(i) / sampleRate
+                s[i] = Int16(sin(2.0 * .pi * 880.0 * t) * 16000.0)
+            }
+        }
+        let sysChunk = try await sysWriter.appendAudioData(sysPCM, sampleCount: 48000)!
+
+        // 3. Consolidate into full master audio recording
+        let masterURL = try await store.consolidateRecording(
+            for: meetingId,
+            chunks: [micChunk, sysChunk]
+        )
+
+        #expect(FileManager.default.fileExists(atPath: masterURL.path))
+        #expect(store.hasRecording(for: meetingId))
+
+        // 4. Verify decoded audio file properties via AVFoundation
+        let audioFile = try AVAudioFile(forReading: masterURL)
+        #expect(audioFile.fileFormat.sampleRate == 48000.0)
+        #expect(audioFile.fileFormat.channelCount == 2) // Stereo
+        #expect(audioFile.length >= 48000)
+
+        // 5. Test getFullAudioData
+        let wavData = try await store.getFullAudioData(for: meetingId)
+        #expect(wavData.count > 44)
+        #expect(String(data: wavData.prefix(4), encoding: .ascii) == "RIFF")
+
+        // 6. Test delete
+        store.deleteRecording(for: meetingId)
+        #expect(!store.hasRecording(for: meetingId))
+
+        // Cleanup
+        try? FileManager.default.removeItem(at: tempDir)
+        AudioKeychainManager.shared.deleteKey(for: meetingId)
+    }
+
+    @Test("AudioPlaybackEngine Loads Master Audio and Responds to Seek")
+    func testAudioPlaybackEngineMasterAudio() async throws {
+        let meetingId = "test-playback-\(UUID().uuidString)"
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let tempRecordingsDir = tempDir.appendingPathComponent("Recordings", isDirectory: true)
+
+        let store = FullAudioRecordingStore(customRecordingsDirectory: tempRecordingsDir)
+
+        // Create 2 seconds of audio
+        let micWriter = try EncryptedChunkWriter(
+            meetingId: meetingId,
+            trackId: "track-mic-1",
+            journalDirectory: tempDir,
+            sampleRate: 48000.0,
+            channelCount: 1,
+            chunkDurationSeconds: 2.0
+        )
+        var pcm = Data(count: 96000 * 2)
+        pcm.withUnsafeMutableBytes { ptr in
+            let s = ptr.bindMemory(to: Int16.self).baseAddress!
+            for i in 0..<96000 {
+                s[i] = Int16(sin(Double(i) * 0.05) * 10000.0)
+            }
+        }
+        let chunk = try await micWriter.appendAudioData(pcm, sampleCount: 96000)!
+        let masterURL = try await store.consolidateRecording(for: meetingId, chunks: [chunk])
+
+        let playbackEngine = AudioPlaybackEngine()
+        playbackEngine.loadMeeting(
+            meetingId: meetingId,
+            micChunks: [chunk],
+            systemChunks: [],
+            masterAudioURL: masterURL
+        )
+
+        #expect(playbackEngine.state == .stopped)
+
+        // Test seek
+        try playbackEngine.seek(to: 500)
+        #expect(playbackEngine.state == .stopped)
+
+        playbackEngine.stop()
+
+        // Cleanup
+        store.deleteRecording(for: meetingId)
+        try? FileManager.default.removeItem(at: tempDir)
+        AudioKeychainManager.shared.deleteKey(for: meetingId)
     }
 }

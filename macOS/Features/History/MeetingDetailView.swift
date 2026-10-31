@@ -173,6 +173,32 @@ public struct MeetingDetailView: View {
                         .foregroundColor(.green)
                     }
                 }
+
+                // Participants / Speakers in this meeting
+                if !meetingParticipants.isEmpty {
+                    HStack(spacing: 6) {
+                        Text("Speakers:")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(.secondary)
+
+                        ForEach(meetingParticipants, id: \.self) { p in
+                            historySpeakerChip(p)
+                        }
+
+                        Button(action: { isShowingBatchSpeakerRename = true }) {
+                            HStack(spacing: 2) {
+                                Image(systemName: "person.2.waveform.badge.magnifyingglass")
+                                    .font(.system(size: 8))
+                                Text("Manage")
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                            .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Manage and batch rename speakers for this meeting")
+                    }
+                    .padding(.top, 2)
+                }
             }
 
             Spacer()
@@ -195,15 +221,27 @@ public struct MeetingDetailView: View {
                 .fixedSize(horizontal: true, vertical: false)
                 .help("Upload pending encrypted audio chunks to Cloudflare R2")
 
-                // Export Menu
+                // Export & Download Menu
                 Menu {
+                    Button(action: downloadPDF) {
+                        Label("Download PDF Document (.pdf)", systemImage: "doc.richtext")
+                    }
+                    Button(action: downloadTXT) {
+                        Label("Download Plain Text (.txt)", systemImage: "doc.text")
+                    }
+                    Button(action: downloadJSON) {
+                        Label("Download Structured JSON (.json)", systemImage: "curlybraces")
+                    }
+                    Button(action: downloadFullAudio) {
+                        Label("Download Full Audio (.wav)", systemImage: "waveform")
+                    }
+                    Divider()
                     Button("Export as Markdown (.md)", action: onExportMarkdown)
-                    Button("Export as JSON (.json)", action: onExportJSON)
                     Button("Export Subtitles (.srt)", action: onExportSRT)
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: "square.and.arrow.up")
-                        Text("Export")
+                        Image(systemName: "square.and.arrow.down")
+                        Text("Download")
                             .lineLimit(1)
                             .fixedSize()
                     }
@@ -325,6 +363,50 @@ public struct MeetingDetailView: View {
                         .buttonStyle(.bordered)
                         .fixedSize(horizontal: true, vertical: false)
                         .help("Copy clean Markdown summary with decisions and action items")
+                    }
+
+                    Divider()
+                        .padding(.vertical, 2)
+
+                    HStack(spacing: 8) {
+                        Button(action: downloadPDF) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "doc.richtext.fill")
+                                Text("Download PDF")
+                                    .lineLimit(1)
+                                    .fixedSize()
+                            }
+                            .font(.system(size: 11, weight: .semibold))
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .help("Download formatted vector PDF with speaker badges")
+
+                        Button(action: downloadTXT) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "doc.text.fill")
+                                Text("Download TXT")
+                                    .lineLimit(1)
+                                    .fixedSize()
+                            }
+                            .font(.system(size: 11, weight: .medium))
+                        }
+                        .buttonStyle(.bordered)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .help("Download clean plain text transcript (.txt)")
+
+                        Button(action: downloadJSON) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "curlybraces")
+                                Text("Download JSON")
+                                    .lineLimit(1)
+                                    .fixedSize()
+                            }
+                            .font(.system(size: 11, weight: .medium))
+                        }
+                        .buttonStyle(.bordered)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .help("Download structured JSON transcript (.json)")
                     }
                 }
                 .padding(12)
@@ -813,5 +895,202 @@ public struct MeetingDetailView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             copiedMarkdownNotice = false
         }
+    }
+
+    // MARK: - Export Helpers
+
+    private func downloadPDF() {
+        guard let pdfData = MeetingExportService.shared.generatePDFData(
+            meeting: meeting,
+            segments: transcriptSegments,
+            summary: summary
+        ) else { return }
+        MeetingExportService.shared.exportWithSavePanel(
+            filename: meeting.title.isEmpty ? "Meeting_Transcript" : meeting.title,
+            fileExtension: "pdf",
+            data: pdfData
+        )
+    }
+
+    private func downloadTXT() {
+        let txt = MeetingExportService.shared.generatePlainText(
+            meeting: meeting,
+            segments: transcriptSegments,
+            summary: summary
+        )
+        MeetingExportService.shared.exportWithSavePanel(
+            filename: meeting.title.isEmpty ? "Meeting_Transcript" : meeting.title,
+            fileExtension: "txt",
+            textContent: txt
+        )
+    }
+
+    private func downloadJSON() {
+        if let data = MeetingExportService.shared.generateJSONData(
+            meeting: meeting,
+            segments: transcriptSegments,
+            summary: summary
+        ) {
+            MeetingExportService.shared.exportWithSavePanel(
+                filename: meeting.title.isEmpty ? "Meeting_Transcript" : meeting.title,
+                fileExtension: "json",
+                data: data
+            )
+        }
+    }
+
+    private func downloadFullAudio() {
+        Task {
+            do {
+                let data = try await FullAudioRecordingStore.shared.getFullAudioData(for: meeting.id)
+                await MainActor.run {
+                    let base = meeting.title.isEmpty ? "Meeting_Audio" : "\(meeting.title)_Audio"
+                    MeetingExportService.shared.exportWithSavePanel(
+                        filename: base,
+                        fileExtension: "wav",
+                        data: data
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    let alert = NSAlert()
+                    alert.messageText = "Audio Not Available"
+                    alert.informativeText = "Could not export audio: \(error.localizedDescription)"
+                    alert.runModal()
+                }
+            }
+        }
+    }
+
+    // MARK: - Participants & Speakers in History
+
+    private var meetingParticipants: [String] {
+        var set = Set<String>()
+        for s in transcriptSegments {
+            set.insert(s.speakerLabel)
+        }
+        return set.sorted { a, b in
+            if a == "You" { return true }
+            if b == "You" { return false }
+            return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
+        }
+    }
+
+    private func historySpeakerChip(_ speaker: String) -> some View {
+        let isYou = (speaker == "You")
+        return Button(action: {
+            renamingSpeaker = speaker
+            newSpeakerName = speaker
+        }) {
+            HStack(spacing: 3) {
+                Image(systemName: isYou ? "person.crop.circle.fill" : "person.fill")
+                    .font(.system(size: 8))
+                Text(speaker)
+                    .font(.system(size: 10, weight: .semibold))
+                Image(systemName: "pencil")
+                    .font(.system(size: 7))
+                    .foregroundColor(.secondary.opacity(0.8))
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2.5)
+            .background(isYou ? Color.accentColor.opacity(0.12) : Color.purple.opacity(0.1))
+            .foregroundColor(isYou ? .accentColor : .purple)
+            .cornerRadius(10)
+        }
+        .buttonStyle(.plain)
+        .help("Click to rename '\(speaker)' across this meeting's transcript")
+        .popover(isPresented: Binding(
+            get: { renamingSpeaker == speaker },
+            set: { if !$0 { renamingSpeaker = nil } }
+        )) {
+            historyRenamePopover(for: speaker)
+        }
+    }
+
+    private func historyRenamePopover(for speaker: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Rename Speaker")
+                .font(.headline)
+            Text("Rename '\(speaker)' across this meeting's entire transcript.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            let spaceProfiles = LocalDatabaseStore.shared.getSpeakerProfiles(spaceId: meeting.spaceId)
+            if !spaceProfiles.isEmpty {
+                Text("KNOWN SPEAKERS IN SPACE:")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.secondary)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(spaceProfiles) { p in
+                            Button(action: {
+                                newSpeakerName = p.name
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "person.fill")
+                                        .font(.system(size: 8))
+                                    Text(p.name)
+                                        .font(.system(size: 11, weight: .medium))
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(newSpeakerName == p.name ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.1))
+                                .cornerRadius(10)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(newSpeakerName == p.name ? Color.accentColor : Color.clear, lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxWidth: 240)
+            }
+
+            TextField("Speaker Name", text: $newSpeakerName)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 240)
+
+            Toggle("Save to Known Speakers Directory", isOn: $saveToSpeakerDirectory)
+                .font(.caption)
+                .toggleStyle(.checkbox)
+
+            HStack {
+                Button("Cancel") {
+                    renamingSpeaker = nil
+                }
+                .buttonStyle(.bordered)
+                Spacer()
+                Button("Rename") {
+                    let trimmed = newSpeakerName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        LocalDatabaseStore.shared.renameSpeakerInTranscript(meetingId: meeting.id, oldLabel: speaker, newLabel: trimmed)
+                        for i in 0..<transcriptSegments.count {
+                            if transcriptSegments[i].speakerLabel == speaker {
+                                transcriptSegments[i].speakerLabel = trimmed
+                            }
+                        }
+                        if saveToSpeakerDirectory {
+                            let existing = LocalDatabaseStore.shared.getSpeakerProfiles(spaceId: meeting.spaceId)
+                            if !existing.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+                                let profile = SpeakerProfile(
+                                    spaceId: meeting.spaceId,
+                                    name: trimmed,
+                                    roleOrTitle: "Participant",
+                                    organization: "",
+                                    notesOrContext: "Added from meeting history",
+                                    aliases: [speaker]
+                                )
+                                LocalDatabaseStore.shared.saveSpeakerProfile(profile)
+                            }
+                        }
+                    }
+                    renamingSpeaker = nil
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(12)
     }
 }

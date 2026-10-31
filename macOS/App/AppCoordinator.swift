@@ -75,6 +75,7 @@ public final class AppCoordinator: ObservableObject {
             state: .scheduled
         )
         self.currentMeeting = initialMeeting
+        self.playbackEngine.delegate = self
         setupGlobalShortcut()
         setupNotificationObservers()
         loadLocalData()
@@ -474,6 +475,13 @@ public final class AppCoordinator: ObservableObject {
         store.saveAudioChunks(finalizedChunks)
         store.saveTranscriptSegments(transcriptSegments)
 
+        // Consolidate master audio recording for full meeting audio store
+        let chunksToConsolidate = finalizedChunks
+        let meetingIdToConsolidate = m.id
+        Task {
+            _ = try? await FullAudioRecordingStore.shared.consolidateRecording(for: meetingIdToConsolidate, chunks: chunksToConsolidate)
+        }
+
         // Trigger cloud synchronization in background
         Task {
             await SyncEngine.shared.syncAll(spaceId: m.spaceId)
@@ -510,10 +518,23 @@ public final class AppCoordinator: ObservableObject {
         self.pastMeetingSummary = store.getSummary(meetingId: meeting.id)
         self.playbackOffsetMs = 0
         self.isPlaying = false
+
+        let chunks = store.getAudioChunks(meetingId: meeting.id)
+        let micChunks = chunks.filter { $0.trackId.lowercased().contains("mic") }
+        let sysChunks = chunks.filter { $0.trackId.lowercased().contains("sys") }
+        let masterURL = FullAudioRecordingStore.shared.recordingURL(for: meeting.id)
+
+        playbackEngine.loadMeeting(
+            meetingId: meeting.id,
+            micChunks: micChunks.isEmpty ? chunks : micChunks,
+            systemChunks: sysChunks,
+            masterAudioURL: FullAudioRecordingStore.shared.hasRecording(for: meeting.id) ? masterURL : nil
+        )
     }
 
     public func deletePastMeeting(id: String) {
         store.deleteMeeting(id: id, spaceId: activeSpace.id)
+        FullAudioRecordingStore.shared.deleteRecording(for: id)
         self.pastMeetings = store.getMeetings()
         if selectedPastMeeting?.id == id {
             if let first = pastMeetings.first {
@@ -638,7 +659,10 @@ public final class AppCoordinator: ObservableObject {
                 }
             },
             onDismiss: {
-                FloatingPanelController.shared.hidePanel()
+                FloatingPanelController.shared.hidePanelAndRestoreMainWindow()
+            },
+            onReturnToMainWindow: {
+                FloatingPanelController.shared.hidePanelAndRestoreMainWindow()
             },
             onRequestImmediateHelp: { [weak self] in
                 self?.triggerImmediateHelp()
@@ -648,11 +672,15 @@ public final class AppCoordinator: ObservableObject {
             }
         )
 
-        FloatingPanelController.shared.showPanel(with: AnyView(assistantView))
+        FloatingPanelController.shared.showPanel(with: AnyView(assistantView), hideMainWindow: true)
     }
 
     public func toggleFloatingPanel() {
-        showFloatingPanel()
+        if FloatingPanelController.shared.isPanelVisible {
+            FloatingPanelController.shared.hidePanelAndRestoreMainWindow()
+        } else {
+            showFloatingPanel()
+        }
     }
 
     public func handleInMeetingChat(prompt: String) {
@@ -1004,6 +1032,22 @@ extension AppCoordinator: AssistanceCoordinatorDelegate {
     nonisolated public func assistanceCoordinator(_ coordinator: AssistanceCoordinator, didUpdateTokenUsage usage: TokenUsage) {
         Task { @MainActor in
             self.currentMeetingTokenUsage = usage
+        }
+    }
+}
+
+// MARK: - AudioPlaybackEngineDelegate Conformance
+
+extension AppCoordinator: AudioPlaybackEngineDelegate {
+    nonisolated public func audioPlaybackEngine(_ engine: AudioPlaybackEngine, didUpdateOffsetMs offsetMs: Int64) {
+        Task { @MainActor in
+            self.playbackOffsetMs = offsetMs
+        }
+    }
+
+    nonisolated public func audioPlaybackEngine(_ engine: AudioPlaybackEngine, didChangeState state: PlaybackState) {
+        Task { @MainActor in
+            self.isPlaying = (state == .playing)
         }
     }
 }

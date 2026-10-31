@@ -1,11 +1,17 @@
 import SwiftUI
 import AppKit
 
-public final class FloatingPanelController: NSWindowController, @unchecked Sendable {
+@MainActor
+public final class FloatingPanelController: NSWindowController {
     public static let shared = FloatingPanelController()
 
     private var panel: NSPanel?
     private var hasPositionedInitially: Bool = false
+    private weak var previouslyVisibleMainWindow: NSWindow?
+
+    public var isPanelVisible: Bool {
+        panel?.isVisible ?? false
+    }
 
     public init() {
         let panel = NSPanel(
@@ -39,7 +45,7 @@ public final class FloatingPanelController: NSWindowController, @unchecked Senda
         fatalError("init(coder:) has not been implemented")
     }
 
-    public func showPanel(with view: AnyView) {
+    public func showPanel(with view: AnyView, hideMainWindow: Bool = true) {
         guard let panel = self.panel else { return }
         panel.contentView = NSHostingView(rootView: view)
 
@@ -54,18 +60,71 @@ public final class FloatingPanelController: NSWindowController, @unchecked Senda
             hasPositionedInitially = true
         }
 
+        // Animate main window fade out if requested
+        if hideMainWindow {
+            if let mainWindow = NSApplication.shared.windows.first(where: { $0 != panel && !($0 is NSPanel) && $0.isVisible }) {
+                self.previouslyVisibleMainWindow = mainWindow
+                NSAnimationContext.runAnimationGroup({ context in
+                    context.duration = 0.22
+                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                    mainWindow.animator().alphaValue = 0.0
+                }, completionHandler: {
+                    Task { @MainActor in
+                        mainWindow.orderOut(nil)
+                        mainWindow.alphaValue = 1.0
+                    }
+                })
+            }
+        }
+
+        // Animate HUD panel fade in
+        panel.alphaValue = 0.0
         panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().alphaValue = 1.0
+        }
     }
 
     public func hidePanel() {
-        panel?.orderOut(nil)
+        hidePanelAndRestoreMainWindow()
+    }
+
+    public func hidePanelAndRestoreMainWindow() {
+        guard let panel = self.panel else { return }
+
+        // Animate HUD panel fade out
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.18
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().alphaValue = 0.0
+        }, completionHandler: {
+            Task { @MainActor in
+                panel.orderOut(nil)
+                panel.alphaValue = 1.0
+            }
+        })
+
+        // Restore main window with smooth fade in
+        let targetWindow = self.previouslyVisibleMainWindow ?? NSApplication.shared.windows.first(where: { $0 != panel && !($0 is NSPanel) })
+        if let mainWindow = targetWindow {
+            mainWindow.alphaValue = 0.0
+            mainWindow.makeKeyAndOrderFront(nil)
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.22
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                mainWindow.animator().alphaValue = 1.0
+            }
+        }
     }
 
     public func togglePanel(with view: AnyView) {
-        if let panel = panel, panel.isVisible {
-            hidePanel()
+        if isPanelVisible {
+            hidePanelAndRestoreMainWindow()
         } else {
-            showPanel(with: view)
+            showPanel(with: view, hideMainWindow: true)
         }
     }
 }

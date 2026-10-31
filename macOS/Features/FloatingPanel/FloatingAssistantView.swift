@@ -9,6 +9,7 @@ public struct FloatingAssistantView: View {
     public var tokenUsage: TokenUsage = TokenUsage()
     public var onPinToggled: (Bool) -> Void
     public var onDismiss: () -> Void
+    public var onReturnToMainWindow: (() -> Void)? = nil
     public var onRequestImmediateHelp: () -> Void
     public var onAskChat: (String) -> Void
 
@@ -27,6 +28,7 @@ public struct FloatingAssistantView: View {
         tokenUsage: TokenUsage = TokenUsage(),
         onPinToggled: @escaping (Bool) -> Void,
         onDismiss: @escaping () -> Void,
+        onReturnToMainWindow: (() -> Void)? = nil,
         onRequestImmediateHelp: @escaping () -> Void,
         onAskChat: @escaping (String) -> Void
     ) {
@@ -37,6 +39,7 @@ public struct FloatingAssistantView: View {
         self.tokenUsage = tokenUsage
         self.onPinToggled = onPinToggled
         self.onDismiss = onDismiss
+        self.onReturnToMainWindow = onReturnToMainWindow
         self.onRequestImmediateHelp = onRequestImmediateHelp
         self.onAskChat = onAskChat
     }
@@ -170,6 +173,21 @@ public struct FloatingAssistantView: View {
                 .help(isPinned ? "Unpin suggestion" : "Pin suggestion")
             }
 
+            Button(action: {
+                if let onReturn = onReturnToMainWindow {
+                    onReturn()
+                } else {
+                    onDismiss()
+                }
+            }) {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
+            .help("Switch back to Sidebrief main window")
+
             Button(action: onDismiss) {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 14))
@@ -177,6 +195,7 @@ public struct FloatingAssistantView: View {
             }
             .buttonStyle(.plain)
             .fixedSize(horizontal: true, vertical: false)
+            .help("Close HUD and restore main window")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)

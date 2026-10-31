@@ -13,6 +13,8 @@ public struct BatchSpeakerRenameSheet: View {
     @State private var editedNames: [String: String] = [:] // OriginalLabel -> NewName
     @State private var saveToDirectory: Set<String> = []  // Labels selected to save
     @State private var knownProfiles: [SpeakerProfile] = []
+    @State private var newSpeakerInputName: String = ""
+    @State private var newSpeakerGender: String = "Speaker"
 
     // Audio player state for voice sample playback
     @State private var audioPlayer: AVAudioPlayer?
@@ -58,18 +60,28 @@ public struct BatchSpeakerRenameSheet: View {
 
             Divider()
 
+            // Quick Add Named Speaker Section
+            addSpeakerSection
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color(NSColor.windowBackgroundColor).opacity(0.5))
+
+            Divider()
+
             // Content
             if sessionSpeakers.isEmpty {
                 VStack(spacing: 12) {
-                    Image(systemName: "waveform.slash")
+                    Image(systemName: "person.badge.plus")
                         .font(.system(size: 36))
-                        .foregroundColor(.secondary)
-                    Text("No remote speaker voice samples recorded yet.")
+                        .foregroundColor(.accentColor)
+                    Text("No speakers added or detected yet")
                         .font(.subheadline)
+                        .fontWeight(.semibold)
+                    Text("Use the input above to add participants by name anytime, or speak to automatically detect voices.")
+                        .font(.caption)
                         .foregroundColor(.secondary)
-                    Text("Start speaking or play remote meeting audio to automatically detect voices.")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 320)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(40)
@@ -375,6 +387,99 @@ public struct BatchSpeakerRenameSheet: View {
             return "\(mins)m \(secs)s"
         } else {
             return "\(max(1, secs))s"
+        }
+    }
+
+    // MARK: - Add Speaker Section
+
+    private var addSpeakerSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "person.badge.plus")
+                    .foregroundColor(.accentColor)
+                    .font(.system(size: 13))
+
+                TextField("Add speaker name (e.g. Alex, Dr. Miller)...", text: $newSpeakerInputName)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        addNewSpeaker()
+                    }
+
+                Picker("Voice", selection: $newSpeakerGender) {
+                    Text("Auto Voice").tag("Speaker")
+                    Text("Male Pitch").tag("Male")
+                    Text("Female Pitch").tag("Female")
+                }
+                .pickerStyle(.menu)
+                .frame(width: 110)
+
+                Button(action: addNewSpeaker) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                        Text("Add Speaker")
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .fixedSize(horizontal: true, vertical: false)
+                .disabled(newSpeakerInputName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            // Quick suggestions from Known Space Profiles
+            let unaddedProfiles = knownProfiles.filter { profile in
+                !sessionSpeakers.contains(where: { $0.assignedLabel.caseInsensitiveCompare(profile.name) == .orderedSame })
+            }
+            if !unaddedProfiles.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        Text("KNOWN SPEAKERS:")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(.secondary)
+
+                        ForEach(unaddedProfiles) { profile in
+                            Button(action: {
+                                addSpeaker(named: profile.name, gender: profile.genderEstimate ?? "Speaker")
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "person.fill")
+                                        .font(.system(size: 8))
+                                    Text(profile.name)
+                                        .font(.system(size: 11, weight: .medium))
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.secondary.opacity(0.12))
+                                .cornerRadius(10)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+
+    private func addNewSpeaker() {
+        let trimmed = newSpeakerInputName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        addSpeaker(named: trimmed, gender: newSpeakerGender)
+        newSpeakerInputName = ""
+    }
+
+    private func addSpeaker(named name: String, gender: String) {
+        let speaker = SpeakerDiarizationService.shared.addNamedSpeaker(
+            meetingId: meetingId,
+            spaceId: spaceId,
+            name: name,
+            genderEstimate: gender,
+            saveToDirectory: true
+        )
+        if !sessionSpeakers.contains(where: { $0.id == speaker.id }) {
+            sessionSpeakers.append(speaker)
+            editedNames[speaker.assignedLabel] = speaker.assignedLabel
+            saveToDirectory.insert(speaker.assignedLabel)
         }
     }
 }

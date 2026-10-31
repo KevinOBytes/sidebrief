@@ -175,6 +175,7 @@ public final class LocalDatabaseStore: @unchecked Sendable {
             sqlite3_exec(db, "ALTER TABLE local_speaker_profiles ADD COLUMN voiceprint_json TEXT;", nil, nil, nil)
             sqlite3_exec(db, "ALTER TABLE local_speaker_profiles ADD COLUMN voice_sample_blob BLOB;", nil, nil, nil)
             sqlite3_exec(db, "ALTER TABLE local_speaker_profiles ADD COLUMN gender_estimate TEXT;", nil, nil, nil)
+            sqlite3_exec(db, "ALTER TABLE local_meetings ADD COLUMN master_audio_path TEXT;", nil, nil, nil)
             sqlite3_exec(db, "DELETE FROM local_speaker_profiles WHERE rowid NOT IN (SELECT min(rowid) FROM local_speaker_profiles GROUP BY name);", nil, nil, nil)
         }
         seedDefaultVocabularyIfNeeded()
@@ -232,6 +233,20 @@ public final class LocalDatabaseStore: @unchecked Sendable {
 
         // Enqueue to outbox
         enqueueOutbox(entityType: "meeting", entityId: meeting.id, spaceId: meeting.spaceId, object: meeting)
+    }
+
+    public func updateMeetingMasterAudioPath(meetingId: String, path: String) {
+        queue.sync {
+            let sql = "UPDATE local_meetings SET master_audio_path = ?, updated_at = ? WHERE id = ?;"
+            var stmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+                sqlite3_bind_text(stmt, 1, (path as NSString).utf8String, -1, nil)
+                sqlite3_bind_double(stmt, 2, Date().timeIntervalSince1970)
+                sqlite3_bind_text(stmt, 3, (meetingId as NSString).utf8String, -1, nil)
+                sqlite3_step(stmt)
+            }
+            sqlite3_finalize(stmt)
+        }
     }
 
     public func getMeeting(id: String) -> Meeting? {

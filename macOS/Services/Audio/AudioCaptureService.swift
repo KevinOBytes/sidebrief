@@ -205,7 +205,6 @@ public final class AudioCaptureService: NSObject, @unchecked Sendable {
 
         if let micWriter = micChunkWriter {
             if let lastChunk = try? await micWriter.flush() {
-                allChunks.append(lastChunk)
                 delegate?.audioCaptureService(self, didFinalizeChunk: lastChunk)
             }
             allChunks.append(contentsOf: await micWriter.getFinalizedChunks())
@@ -213,7 +212,6 @@ public final class AudioCaptureService: NSObject, @unchecked Sendable {
 
         if let sysWriter = systemChunkWriter {
             if let lastChunk = try? await sysWriter.flush() {
-                allChunks.append(lastChunk)
                 delegate?.audioCaptureService(self, didFinalizeChunk: lastChunk)
             }
             allChunks.append(contentsOf: await sysWriter.getFinalizedChunks())
@@ -268,18 +266,13 @@ public final class AudioCaptureService: NSObject, @unchecked Sendable {
                 return
             }
 
-            final class BufferInputBox: @unchecked Sendable {
-                var hasData = false
-                let buffer: AVAudioPCMBuffer
-                init(buffer: AVAudioPCMBuffer) { self.buffer = buffer }
-            }
-            let box = BufferInputBox(buffer: buffer)
+            var hasProvidedData = false
             var error: NSError?
             let status = converter.convert(to: convertedBuffer, error: &error) { inNumPackets, outStatus in
-                if !box.hasData {
-                    box.hasData = true
+                if !hasProvidedData {
+                    hasProvidedData = true
                     outStatus.pointee = .haveData
-                    return box.buffer
+                    return buffer
                 } else {
                     outStatus.pointee = .noDataNow
                     return nil
@@ -404,56 +397,65 @@ public final class AudioCaptureService: NSObject, @unchecked Sendable {
                 // Non-interleaved multi-channel: each buffer contains one channel
                 let frames = Int(buffers[0].mDataByteSize) / MemoryLayout<Float32>.size
                 guard frames > 0 else { return }
-                pcmData.reserveCapacity(frames * MemoryLayout<Int16>.size)
                 let chPointers = buffers.compactMap { $0.mData?.bindMemory(to: Float32.self, capacity: frames) }
                 guard chPointers.count == buffers.count else { return }
 
-                for f in 0..<frames {
-                    var sum: Float = 0
-                    for ch in 0..<buffers.count {
-                        sum += chPointers[ch][f]
+                var outPcm = Data(count: frames * MemoryLayout<Int16>.size)
+                outPcm.withUnsafeMutableBytes { outRaw in
+                    guard let outPtr = outRaw.baseAddress?.assumingMemoryBound(to: Int16.self) else { return }
+                    for f in 0..<frames {
+                        var sum: Float = 0
+                        for ch in 0..<buffers.count {
+                            sum += chPointers[ch][f]
+                        }
+                        let avg = sum / Float(buffers.count)
+                        outPtr[f] = Int16(max(-1.0, min(1.0, avg)) * 32767.0)
                     }
-                    let avg = sum / Float(buffers.count)
-                    var int16Val = Int16(max(-1.0, min(1.0, avg)) * 32767.0)
-                    withUnsafeBytes(of: &int16Val) { pcmData.append(contentsOf: $0) }
                 }
+                pcmData = outPcm
                 sampleCount = frames
             } else {
                 // Interleaved multi-channel (e.g. standard stereo) or mono
                 let totalFloats = byteCount / MemoryLayout<Float32>.size
                 let frames = totalFloats / channelCount
                 guard frames > 0 else { return }
-                pcmData.reserveCapacity(frames * MemoryLayout<Int16>.size)
                 let floatPtr = rawData.bindMemory(to: Float32.self, capacity: totalFloats)
 
-                for f in 0..<frames {
-                    var sum: Float = 0
-                    let base = f * channelCount
-                    for ch in 0..<channelCount {
-                        sum += floatPtr[base + ch]
+                var outPcm = Data(count: frames * MemoryLayout<Int16>.size)
+                outPcm.withUnsafeMutableBytes { outRaw in
+                    guard let outPtr = outRaw.baseAddress?.assumingMemoryBound(to: Int16.self) else { return }
+                    for f in 0..<frames {
+                        var sum: Float = 0
+                        let base = f * channelCount
+                        for ch in 0..<channelCount {
+                            sum += floatPtr[base + ch]
+                        }
+                        let avg = sum / Float(channelCount)
+                        outPtr[f] = Int16(max(-1.0, min(1.0, avg)) * 32767.0)
                     }
-                    let avg = sum / Float(channelCount)
-                    var int16Val = Int16(max(-1.0, min(1.0, avg)) * 32767.0)
-                    withUnsafeBytes(of: &int16Val) { pcmData.append(contentsOf: $0) }
                 }
+                pcmData = outPcm
                 sampleCount = frames
             }
         } else if bits == 16 {
             let totalInt16 = byteCount / MemoryLayout<Int16>.size
             let frames = totalInt16 / channelCount
             guard frames > 0 else { return }
-            pcmData.reserveCapacity(frames * MemoryLayout<Int16>.size)
             let int16Ptr = rawData.bindMemory(to: Int16.self, capacity: totalInt16)
 
-            for f in 0..<frames {
-                var sum: Int32 = 0
-                let base = f * channelCount
-                for ch in 0..<channelCount {
-                    sum += Int32(int16Ptr[base + ch])
+            var outPcm = Data(count: frames * MemoryLayout<Int16>.size)
+            outPcm.withUnsafeMutableBytes { outRaw in
+                guard let outPtr = outRaw.baseAddress?.assumingMemoryBound(to: Int16.self) else { return }
+                for f in 0..<frames {
+                    var sum: Int32 = 0
+                    let base = f * channelCount
+                    for ch in 0..<channelCount {
+                        sum += Int32(int16Ptr[base + ch])
+                    }
+                    outPtr[f] = Int16(sum / Int32(channelCount))
                 }
-                var int16Val = Int16(sum / Int32(channelCount))
-                withUnsafeBytes(of: &int16Val) { pcmData.append(contentsOf: $0) }
             }
+            pcmData = outPcm
             sampleCount = frames
         } else {
             return
@@ -465,20 +467,22 @@ public final class AudioCaptureService: NSObject, @unchecked Sendable {
             let dstRate = Self.sampleRate
             let ratio = dstRate / srcRate
             let outCount = Int(Double(sampleCount) * ratio)
-            var resampledData = Data(capacity: outCount * MemoryLayout<Int16>.size)
+            var resampledData = Data(count: outCount * MemoryLayout<Int16>.size)
 
-            pcmData.withUnsafeBytes { rawPtr in
-                let inSamples = rawPtr.bindMemory(to: Int16.self)
-                for i in 0..<outCount {
-                    let srcIndex = Double(i) / ratio
-                    let idx0 = Int(srcIndex)
-                    let idx1 = min(idx0 + 1, sampleCount - 1)
-                    let frac = Float(srcIndex - Double(idx0))
-                    let s0 = Float(inSamples[idx0])
-                    let s1 = Float(inSamples[idx1])
-                    let interpolated = s0 + frac * (s1 - s0)
-                    var finalVal = Int16(max(-32768.0, min(32767.0, interpolated)))
-                    withUnsafeBytes(of: &finalVal) { resampledData.append(contentsOf: $0) }
+            resampledData.withUnsafeMutableBytes { outRaw in
+                guard let outPtr = outRaw.baseAddress?.assumingMemoryBound(to: Int16.self) else { return }
+                pcmData.withUnsafeBytes { rawPtr in
+                    let inSamples = rawPtr.bindMemory(to: Int16.self)
+                    for i in 0..<outCount {
+                        let srcIndex = Double(i) / ratio
+                        let idx0 = Int(srcIndex)
+                        let idx1 = min(idx0 + 1, sampleCount - 1)
+                        let frac = Float(srcIndex - Double(idx0))
+                        let s0 = Float(inSamples[idx0])
+                        let s1 = Float(inSamples[idx1])
+                        let interpolated = s0 + frac * (s1 - s0)
+                        outPtr[i] = Int16(max(-32768.0, min(32767.0, interpolated)))
+                    }
                 }
             }
             pcmData = resampledData
