@@ -322,6 +322,9 @@ public struct SidebriefApp: App {
                 currentSuggestion: $coordinator.currentSuggestion,
                 isPinned: $coordinator.isPinned,
                 contextSpaceName: coordinator.activeSpace.name,
+                sttErrorMessage: coordinator.sttErrorMessage,
+                lastMicAudioDate: coordinator.lastMicAudioDate,
+                lastSystemAudioDate: coordinator.lastSystemAudioDate,
                 tokenUsage: coordinator.currentMeetingTokenUsage,
                 onStartRecording: {
                     Task {

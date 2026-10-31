@@ -114,7 +114,7 @@ public struct FloatingAssistantView: View {
                 Text("Sidebrief")
                     .font(.system(size: 13, weight: .bold))
 
-                // Stealth Mode Badge (Indicates window is invisible during screen share)
+                // Stealth Mode Badge (Indicates window is excluded from standard window capture)
                 HStack(spacing: 3) {
                     Image(systemName: "eye.slash.fill")
                         .font(.system(size: 9))
@@ -126,7 +126,7 @@ public struct FloatingAssistantView: View {
                 .padding(.vertical, 2)
                 .background(Color.primary.opacity(0.06))
                 .clipShape(Capsule())
-                .help("Invisible on Zoom, Google Meet, and screen shares")
+                .help("Screen-share hidden via window sharingType = .none. Best effort; verify with your video conferencing tool.")
 
                 Text(contextSpaceName)
                     .font(.system(size: 10, weight: .medium))
@@ -315,9 +315,17 @@ public struct FloatingAssistantView: View {
             // Topic Header
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("CURRENT QUESTION / TOPIC")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 5) {
+                        Text("CURRENT QUESTION / TOPIC")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.secondary)
+
+                        if card.contextRevision > 0 {
+                            Text("• Turn #\(card.contextRevision)")
+                                .font(.system(size: 9.5, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+                    }
 
                     Text(card.detectedTopicOrQuestion)
                         .font(.system(size: 14, weight: .semibold))
@@ -334,21 +342,27 @@ public struct FloatingAssistantView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4))
             }
 
-            // Alternatives Tabs
+            // Alternatives Tabs with ⌘1, ⌘2, ⌘3 shortcuts
             let options = currentAlternativesList(for: card)
             if options.count > 1 {
                 HStack(spacing: 6) {
                     ForEach(0..<options.count, id: \.self) { idx in
                         Button(action: { selectedAlternativeIndex = idx }) {
-                            Text(options[idx].label)
-                                .font(.system(size: 11, weight: selectedAlternativeIndex == idx ? .semibold : .regular))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(selectedAlternativeIndex == idx ? Color.accentColor : Color.primary.opacity(0.08))
-                                .foregroundColor(selectedAlternativeIndex == idx ? .white : .primary)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                            HStack(spacing: 4) {
+                                Text(options[idx].label)
+                                Text("⌘\(idx + 1)")
+                                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                    .opacity(0.7)
+                            }
+                            .font(.system(size: 11, weight: selectedAlternativeIndex == idx ? .semibold : .regular))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(selectedAlternativeIndex == idx ? Color.accentColor : Color.primary.opacity(0.08))
+                            .foregroundColor(selectedAlternativeIndex == idx ? .white : .primary)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
                         .buttonStyle(.plain)
+                        .keyboardShortcut(KeyEquivalent(Character("\(idx + 1)")), modifiers: .command)
                     }
                 }
             }
